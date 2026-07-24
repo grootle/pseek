@@ -227,7 +227,7 @@ def highlight_text(expr: ExprNode, text: str) -> str:
             else:
                 for match in node.pattern.finditer(text):
                     matches.append((match.start(), match.end()))
-        elif isinstance(node, AndNode) or isinstance(node, OrNode):
+        elif isinstance(node, (AndNode, OrNode)):
             collect_matches(node.left)
             collect_matches(node.right)
 

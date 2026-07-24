@@ -141,45 +141,43 @@ def seek(config):
                     # Skip next block to avoid searching the contents of archive files
                     continue
 
-                # Open the file in binary read mode
-                with open(p, 'rb') as f:
-                    # Memory-map the file for efficient access
-                    with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                        if binary_pattern and not binary_pattern.search(mm):
+                lines = []
+                # Memory-map the file for efficient access
+                with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                    if binary_pattern and not binary_pattern.search(mm):
+                        continue
+
+                    mm.seek(0)  # Move the cursor to the beginning of the file
+
+                    # Iterate over each line in the file
+                    for num, line in enumerate(iter(mm.readline, b''), 1):
+                        try:
+                            # Decode the binary line as UTF-8 and strip whitespace
+                            line_decoded = line.decode('utf-8').strip()
+                        except UnicodeDecodeError:
+                            # Skip lines that can't be decoded
                             continue
 
-                        lines = []
-                        mm.seek(0)  # Move the cursor to the beginning of the file
+                        # If the pattern matches in the decoded line
+                        if pattern.evaluate(line_decoded):
+                            # Avoid searching through the entire file content if the fast-content flag is True
+                            if config.paths_only:
+                                matches['content'].add(style(file_label, fg='cyan'))
+                                break
+                            count = pattern.count_matches(line_decoded) if isinstance(pattern, TermNode) else 0
+                            # Highlight the matching parts in green
+                            highlighted = highlight_text(pattern, line_decoded)
+                            # Show a note if the pattern repeats 3 or more times
+                            count_query = f' - Repeated {count} times' if count >= 3 else ''
+                            # Format the output line with line number and highlighted matches
+                            lines.append(
+                                style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
+                            )
 
-                        # Iterate over each line in the file
-                        for num, line in enumerate(iter(mm.readline, b''), 1):
-                            try:
-                                # Decode the binary line as UTF-8 and strip whitespace
-                                line_decoded = line.decode('utf-8').strip()
-                            except UnicodeDecodeError:
-                                # Skip lines that can't be decoded
-                                continue
-
-                            # If the pattern matches in the decoded line
-                            if pattern.evaluate(line_decoded):
-                                # Avoid searching through the entire file content if the fast-content flag is True
-                                if config.paths_only:
-                                    matches['content'].add(style(file_label, fg='cyan'))
-                                    break
-                                count = pattern.count_matches(line_decoded) if isinstance(pattern, TermNode) else 0
-                                # Highlight the matching parts in green
-                                highlighted = highlight_text(pattern, line_decoded)
-                                # Show a note if the pattern repeats 3 or more times
-                                count_query = f' - Repeated {count} times' if count >= 3 else ''
-                                # Format the output line with line number and highlighted matches
-                                lines.append(
-                                    style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
-                                )
-
-                        # If any matching lines were found
-                        if lines:
-                            # Add the file and its matching lines to the results
-                            matches['content'][style(file_label, fg='cyan')] = lines
+                # If any matching lines were found
+                if lines:
+                    # Add the file and its matching lines to the results
+                    matches['content'][style(file_label, fg='cyan')] = lines
             except Exception:
                 continue
 

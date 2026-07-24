@@ -46,9 +46,9 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
         if backend in ('unrar', 'bsdtar', 'unar', '7z'):
             with open(backend_path, 'w') as f:
                 f.write(f'{backend}:{tool_path}')
-            click.secho(f"RAR backend set to: {backend}", fg="green")
+            click.secho(f"RAR backend set to: {backend} -> {tool_path}", fg="green")
         else:
-            click.secho("Unknown RAR backend tool. Please provide unrar, bsdtar, unar, or 7z.", fg="red")
+            click.secho("Unknown RAR backend tool. Please provide one of: unrar, bsdtar, unar, 7z.", fg="red")
         sys.exit(1)
 
     if archive_enabled:
@@ -72,7 +72,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
                 "it is not in the system PATH.\nRAR archive support is disabled.\n"
                 "To enable RAR support, please install one of them. For example:\n"
                 f"  - {install_tip}\n"
-                "If it is installed or in the system PATH and you still have problems, use this option: '--rarfb'\n",
+                "If it is installed or in the system PATH and you still have problems, use this option: '--rar-backend'\n",
                 fg='yellow'
             )
         elif backend_path.exists():
@@ -93,7 +93,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 def get_path_suffix(path: Path) -> str:
     """ If multiple file suffixes are valid, return them, otherwise return only the last suffix """
     if path.is_dir():
-        return ''
+        return None
 
     suffixes = ''.join(path.suffixes)[1:].lower()
 

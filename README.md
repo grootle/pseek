@@ -433,7 +433,7 @@ Supported formats: `zip`, `rar`, `7z`, `gz`, `bz2`, `xz`, `tar`, `tar.gz`, `tar.
 
 ### Nested Archives
 
-Pseek supports recursive archive traversal.
+Pseek supports nested archives for multi-file archive containers (zip, rar, 7z, tar and compressed tar formats). Nested archive traversal means Pseek can search inside an archive that itself contains other archives (for example `a.zip` containing `b.7z` containing `c.tar.gz`).
 
 Example:
 
@@ -518,7 +518,7 @@ Values are in MB.
 
 ## RAR Backend
 
-RAR archives require an external backend that must be set up.
+RAR archives require an external helper programs. To enable full support for RAR, either install one of the helper programs in your PATH or provide a backend configuration to Pseek.
 
 Supported backends include:
 
@@ -527,17 +527,14 @@ Supported backends include:
 - BSDTar
 - Unar
 
-Example:
+If one of these is installed and available in PATH, Pseek will detect it automatically when `--archive` is used and enable archive traversal for RAR files. If not detected, Pseek prints a warning and archive support for that format is disabled.
 
-```bash
-psk "unrar" --rar-backend /usr/bin/unrar
-```
+Use the `--rar-backend` option to persistently configure a backend and its path.
 
-Windows:
+Examples:
 
-```bash
-psk "unrar" --rar-backend "C:\Program Files\WinRAR\UnRAR.exe"
-```
+- Linux: `psk "unrar" --rar-backend /usr/bin/unrar`
+- Windows: `psk "unrar" --rar-backend "C:\Program Files\WinRAR\UnRAR.exe"`
 
 Enter the file type in the query (e.g. `unrar`, `bsdtar`, `unar`, `7z`).
 
@@ -573,5 +570,5 @@ If the search exceeds the limit, it will be terminated.
 
 ## Requirements
 
-* Python `3.8+`
+* Python `3.10+`
 * `unrar`, `bsdtar`, `unar` or `7zip` for the [rarfile](https://pypi.org/project/rarfile/) library to support searching inside `.rar` files (optional)

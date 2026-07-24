@@ -28,8 +28,8 @@ def archive_should_skip(path_info: Path, config, p_size: float, file_ext):
     return False
 
 
-def extract_names_from_archive(file_path: Path, config, depth: int = None,
-                               file_bytes: bytes = None, parent_label: str = ''):
+def extract_names_from_archive(file_path: Path, config, depth: int | None = None,
+                               file_bytes: bytes | None = None, parent_label: str = ''):
     """
     Recursively extract files and directories name from archive files.
     Supports nested archives like a.zip::b.7z::c.txt.
@@ -145,8 +145,8 @@ def extract_names_from_archive(file_path: Path, config, depth: int = None,
         return  # silently skip invalid archives
 
 
-def extract_text_from_archive(file_path: Path, config, depth: int = None,
-                              file_bytes: bytes = None, parent_label: str = ''):
+def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
+                              file_bytes: bytes | None = None, parent_label: str = ''):
     """
     Recursively extract (path_label, text_content) from any archive file.
     Supports nested archives like a.zip::b.7z::c.txt.

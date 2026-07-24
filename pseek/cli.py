@@ -21,7 +21,7 @@ class SearchConfig:
     fuzzy: bool
     fuzzy_level: int
     ext: set[str]
-    exclude_ext: set[str]
+    exclude_ext: set[str | None]
     include: set[Path]
     exclude: set[Path]
     re_include: re.Pattern | None
@@ -31,7 +31,7 @@ class SearchConfig:
     archive: bool
     depth: int | None
     arc_ext: set[str]
-    arc_exc_ext: set[str]
+    arc_exc_ext: set[str | None]
     arc_include: set[Path]
     arc_exclude: set[Path]
     arc_max: float | None
@@ -47,13 +47,13 @@ class SearchConfig:
         # Normalize extensions
         self.ext = set(self.ext)
         self.exclude_ext = (
-            set(self.exclude_ext) | {''}
+            set(self.exclude_ext) | {None}
             if self.exclude_ext
             else set()
         )
         self.arc_ext = set(self.arc_ext)
         self.arc_exc_ext = (
-            set(self.arc_exc_ext) | {''}
+            set(self.arc_exc_ext) | {None}
             if self.arc_exc_ext
             else set()
         )
