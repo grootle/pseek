@@ -81,7 +81,7 @@ def echo(results: dict) -> int:
         results_title = 'Directories' if match_type == 'directory' else match_type.title() + 's'
 
         if paths:
-            click.echo(click.style(f'\n{results_title}:\n', fg='yellow'))
+            click.secho(f'\n{results_title}:\n', fg='yellow')
             if isinstance(paths, dict):
                 # For content search results
                 for key, value in paths.items():
@@ -93,13 +93,13 @@ def echo(results: dict) -> int:
                 click.echo('\n'.join(paths))
 
             if count_result >= 3:
-                click.echo(click.style(f'\n{count_result} results found for {match_type}', fg='blue'))
+                click.secho(f'\n{count_result} results found for {match_type}', fg='blue')
 
         total_results += count_result
 
     # Display final summary message.
     message = f'\nTotal results: {total_results}' if total_results else 'No results found'
-    click.echo(click.style(message, fg='red'))
+    click.secho(message, fg='red')
 
 
 @click.command()
@@ -180,19 +180,15 @@ def search(**kwargs):
 
     if not config.expr and config.fuzzy:
         if not config.word:
-            click.echo(
-                click.style(
-                    "Warning: Fuzzy substring highlighting and counting matches are disabled to improve performance.\n",
-                    fg="yellow"
-                )
+            click.secho(
+                "Warning: Fuzzy substring highlighting and counting matches are disabled to improve performance.\n",
+                fg="yellow"
             )
         elif config.word and " " in config.query:
-            click.echo(
-                click.style(
-                    'Warning: When using "--fuzzy" and "--word", it is better to have the query be a word and '
-                    'not a phrase, as this will cause errors in the results.\n',
-                    fg="yellow"
-                )
+            click.secho(
+                'Warning: When using "--fuzzy" and "--word", it is better to have the query be a word and '
+                'not a phrase, as this will cause errors in the results.\n',
+                fg="yellow"
             )
 
     # If no search type is specified, search in all types.
@@ -207,11 +203,9 @@ def search(**kwargs):
                 result = future.result(timeout=config.timeout)
                 echo(result)
             except TimeoutError:
-                click.echo(
-                    click.style(
-                        f"Timeout! Search exceeded {config.timeout} seconds and was stopped.",
-                        fg="red"
-                    )
+                click.secho(
+                    f"Timeout! Search exceeded {config.timeout} seconds and was stopped.",
+                    fg="red"
                 )
     else:
         echo(seek(config))

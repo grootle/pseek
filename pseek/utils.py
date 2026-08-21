@@ -14,8 +14,15 @@ EXCLUDED_EXTENSIONS = (
 )
 
 EXTENSIONS_PATH = Path(__file__).parent / "compound_extensions"
-with open(EXTENSIONS_PATH, "r") as f:
-    COMPOUND_EXTENSIONS = {line.strip() for line in f}
+try:
+    with open(EXTENSIONS_PATH, "r") as f:
+        COMPOUND_EXTENSIONS = {line.strip() for line in f}
+except FileNotFoundError:
+    COMPOUND_EXTENSIONS = set()
+    click.secho(
+        f"Couldn't find compound_extensions at {EXTENSIONS_PATH}. The program may not work properly.",
+        fg='yellow'
+    )
 
 
 def compile_regex(txt, flags=0) -> re.Pattern | None:
@@ -23,7 +30,7 @@ def compile_regex(txt, flags=0) -> re.Pattern | None:
         try:
             return re.compile(txt, flags)
         except re.error as e:
-            click.echo(click.style(f"Regex compile error: {e}", fg='red'))
+            click.secho(f"Regex compile error: {e}", fg='red')
             sys.exit(1)
 
 

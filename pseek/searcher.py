@@ -34,6 +34,131 @@ def should_skip(config, p_resolved: Path, file_ext: str) -> bool:
     return False
 
 
+def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Path, p_ext: str):
+    """Search files and folders on the system and within archive files"""
+
+    # Choose parent path based on full_path flag
+    p_parent = p_resolved.parent if config.full_path else p.parent
+    # Filter by requested path type first to avoid unnecessary pattern matching
+    match_type = (
+        'file' if config.file and p_resolved.is_file() else
+        'directory' if config.directory and p_resolved.is_dir() else
+        None
+    )
+
+    if match_type and pattern.evaluate(p.name):
+        # Highlight matched query in the name
+        highlighted_name = os.path.join(p_parent, highlight_text(pattern, p.name))
+        matches[match_type].add(highlighted_name)
+
+    # Search for files and directories name inside archive files if archive is active
+    if config.archive and p_ext in ARCHIVE_EXTS[:-3]:
+        for label, name, is_dir in extract_names_from_archive(p_resolved, config):
+            arc_match_type = (
+                'file' if config.file and not is_dir else
+                'directory' if config.directory and is_dir else
+                None
+            )
+            
+            if arc_match_type and pattern.evaluate(name.name):
+                highlighted_name = os.path.join(
+                    p_parent,
+                    f'{p.name}{label}{name.parent}',
+                    highlight_text(pattern, name.name)
+                )
+                matches[arc_match_type].add(highlighted_name)
+
+
+def search_content(config, matches: dict, pattern, binary_pattern,
+                   p: Path, p_resolved: Path, p_ext: str):
+    """Search within the contents of system files and files inside archive files"""
+    
+    # Avoid empty files for mmap
+    if p_resolved.stat().st_size == 0:
+        return
+
+    # Choose the file path format based on the full_path setting
+    file_label = str(p_resolved) if config.full_path else str(p)
+
+    # First, check if the file is an archive, extract it from the archive and perform a search
+    if config.archive and p_ext in ARCHIVE_EXTS:
+        for fname, content in extract_text_from_archive(p, config):
+            if binary_pattern and not binary_pattern.search(content):
+                continue
+            
+            # Try decoding byte data to UTF-8 text. Continue if decoding fails
+            try:
+                decoded_content = content.decode('utf-8')
+            except UnicodeDecodeError:
+                continue
+
+            # Change file_label for archive files
+            archive_label = file_label + fname
+
+            lines = []
+            for num, line in enumerate(decoded_content.splitlines(), 1):
+                if not pattern.evaluate(line):
+                    continue
+
+                if config.paths_only:
+                    matches['content'].add(style(archive_label, fg='cyan'))
+                    break
+
+                count = pattern.count_matches(line) if isinstance(pattern, TermNode) else 0
+                # Highlight the matching parts in green
+                highlighted = highlight_text(pattern, line.strip())
+                # Show a note if the pattern repeats 3 or more times
+                count_query = f' - Repeated {count} times' if count >= 3 else ''
+                # Format the output line with line number and highlighted matches
+                lines.append(
+                    style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
+                )
+
+            if lines:
+                matches['content'][style(archive_label, fg='cyan')] = lines
+        
+        # Skip next block to avoid searching the contents of archive files
+        return
+
+    lines = []
+    # Memory-map the file for efficient access
+    with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+        if binary_pattern and not binary_pattern.search(mm):
+            return
+
+        mm.seek(0)  # Move the cursor to the beginning of the file
+
+        # Iterate over each line in the file
+        for num, line in enumerate(iter(mm.readline, b''), 1):
+            try:
+                # Decode the binary line as UTF-8 and strip whitespace
+                line_decoded = line.decode('utf-8').strip()
+            except UnicodeDecodeError:
+                # Skip lines that can't be decoded
+                continue
+
+            # If the pattern matches in the decoded line
+            if pattern.evaluate(line_decoded):
+                # Avoid searching through the entire file content if the fast-content flag is True
+                if config.paths_only:
+                    matches['content'].add(style(file_label, fg='cyan'))
+                    break
+                count = pattern.count_matches(line_decoded) if isinstance(pattern, TermNode) else 0
+                # Highlight the matching parts in green
+                highlighted = highlight_text(pattern, line_decoded)
+                # Show a note if the pattern repeats 3 or more times
+                count_query = f' - Repeated {count} times' if count >= 3 else ''
+                # Format the output line with line number and highlighted matches
+                lines.append(
+                    style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
+                )
+
+    # If any matching lines were found
+    if lines:
+        # Add the file and its matching lines to the results
+        matches['content'][style(file_label, fg='cyan')] = lines
+
+
 def seek(config):
     """Main search function"""
     pattern = parse_query_expression(config)
@@ -60,125 +185,10 @@ def seek(config):
         
         # Search for files and directories if requested
         if config.file or config.directory:
-            # Choose parent path based on full_path flag
-            p_parent = p_resolved.parent if config.full_path else p.parent
-            # Filter by requested path type first to avoid unnecessary pattern matching
-            match_type = (
-                'file' if config.file and p_resolved.is_file() else
-                'directory' if config.directory and p_resolved.is_dir() else
-                None
-            )
-
-            if match_type and pattern.evaluate(p.name):
-                # Highlight matched query in the name
-                highlighted_name = os.path.join(p_parent, highlight_text(pattern, p.name))
-                matches[match_type].add(highlighted_name)
-
-            # Search for files and directories name inside archive files if archive is active
-            if config.archive and p_ext in ARCHIVE_EXTS[:-3]:
-                for label, name, is_dir in extract_names_from_archive(p_resolved, config):
-                    arc_match_type = (
-                        'file' if config.file and not is_dir else
-                        'directory' if config.directory and is_dir else
-                        None
-                    )
-                    
-                    if arc_match_type and pattern.evaluate(name.name):
-                        highlighted_name = os.path.join(
-                            p_parent,
-                            f'{p.name}{label}{name.parent}',
-                            highlight_text(pattern, name.name)
-                        )
-                        matches[arc_match_type].add(highlighted_name)
-
+            search_file_and_dir(config, matches, pattern, p, p_resolved, p_ext)
+        
         # Search for content inside files if requested
         if config.content and p_resolved.is_file() and p_ext not in EXCLUDED_EXTENSIONS:
-            try:
-                # Avoid empty files for mmap
-                if p_resolved.stat().st_size == 0:
-                    continue
-
-                # Choose the file path format based on the full_path setting
-                file_label = str(p_resolved) if config.full_path else str(p)
-
-                # First, check if the file is an archive, extract it from the archive and perform a search
-                if config.archive and p_ext in ARCHIVE_EXTS:
-                    for fname, content in extract_text_from_archive(p, config):
-                        if binary_pattern and not binary_pattern.search(content):
-                            continue
-                        
-                        # Try decoding byte data to UTF-8 text. Continue if decoding fails
-                        try:
-                            decoded_content = content.decode('utf-8')
-                        except UnicodeDecodeError:
-                            continue
-
-                        # Change file_label for archive files
-                        archive_label = file_label + fname
-
-                        lines = []
-                        for num, line in enumerate(decoded_content.splitlines(), 1):
-                            if not pattern.evaluate(line):
-                                continue
-
-                            if config.paths_only:
-                                matches['content'].add(style(archive_label, fg='cyan'))
-                                break
-
-                            count = pattern.count_matches(line) if isinstance(pattern, TermNode) else 0
-                            # Highlight the matching parts in green
-                            highlighted = highlight_text(pattern, line.strip())
-                            # Show a note if the pattern repeats 3 or more times
-                            count_query = f' - Repeated {count} times' if count >= 3 else ''
-                            # Format the output line with line number and highlighted matches
-                            lines.append(
-                                style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
-                            )
-
-                        if lines:
-                            matches['content'][style(archive_label, fg='cyan')] = lines
-                    
-                    # Skip next block to avoid searching the contents of archive files
-                    continue
-
-                lines = []
-                # Memory-map the file for efficient access
-                with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                    if binary_pattern and not binary_pattern.search(mm):
-                        continue
-
-                    mm.seek(0)  # Move the cursor to the beginning of the file
-
-                    # Iterate over each line in the file
-                    for num, line in enumerate(iter(mm.readline, b''), 1):
-                        try:
-                            # Decode the binary line as UTF-8 and strip whitespace
-                            line_decoded = line.decode('utf-8').strip()
-                        except UnicodeDecodeError:
-                            # Skip lines that can't be decoded
-                            continue
-
-                        # If the pattern matches in the decoded line
-                        if pattern.evaluate(line_decoded):
-                            # Avoid searching through the entire file content if the fast-content flag is True
-                            if config.paths_only:
-                                matches['content'].add(style(file_label, fg='cyan'))
-                                break
-                            count = pattern.count_matches(line_decoded) if isinstance(pattern, TermNode) else 0
-                            # Highlight the matching parts in green
-                            highlighted = highlight_text(pattern, line_decoded)
-                            # Show a note if the pattern repeats 3 or more times
-                            count_query = f' - Repeated {count} times' if count >= 3 else ''
-                            # Format the output line with line number and highlighted matches
-                            lines.append(
-                                style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
-                            )
-
-                # If any matching lines were found
-                if lines:
-                    # Add the file and its matching lines to the results
-                    matches['content'][style(file_label, fg='cyan')] = lines
-            except Exception:
-                continue
+            search_content(config, matches, pattern, binary_pattern, p, p_resolved, p_ext)
 
     return matches

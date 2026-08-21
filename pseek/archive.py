@@ -141,8 +141,8 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                             f.read(),
                             label_prefix
                         )
-    except Exception:
-        return  # silently skip invalid archives
+    except (zipfile.BadZipFile, rarfile.Error, tarfile.ReadError, OSError):
+        return  # silently skip invalid or unreadable archives
 
 
 def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
@@ -256,5 +256,5 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
             opener = {'gz': gzip.open, 'bz2': bz2.open, 'xz': lzma.open}[file_ext]
             with opener(file_stream, 'rb') as f:
                 yield label_prefix[:-2], f.read()
-    except Exception:
+    except (zipfile.BadZipFile, rarfile.Error, tarfile.ReadError, OSError, EOFError):
         return
