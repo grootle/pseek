@@ -2,8 +2,9 @@ import mmap, os
 from click import style
 from pathlib import Path
 from .utils import get_path_suffix, EXCLUDED_EXTENSIONS
-from .parser import parse_query_expression, TermNode, highlight_text
+from .parser import parse_query_expression, TermNode, find_matches
 from .archive import ARCHIVE_EXTS, extract_names_from_archive, extract_text_from_archive
+from .structs import FileDirResult, ContentResult, LineMatch
 
 
 def should_skip(config, p_resolved: Path, file_ext: str) -> bool:
@@ -37,8 +38,8 @@ def should_skip(config, p_resolved: Path, file_ext: str) -> bool:
 def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Path, p_ext: str):
     """Search files and folders on the system and within archive files"""
 
-    # Choose parent path based on full_path flag
-    p_parent = p_resolved.parent if config.full_path else p.parent
+    # Choose path based on absolute_path flag
+    final_path = str(p_resolved) if config.absolute_path else str(p)
     # Filter by requested path type first to avoid unnecessary pattern matching
     match_type = (
         'file' if config.file and p_resolved.is_file() else
@@ -47,13 +48,23 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Pat
     )
 
     if match_type and pattern.evaluate(p.name):
-        # Highlight matched query in the name
-        highlighted_name = os.path.join(p_parent, highlight_text(pattern, p.name))
-        matches[match_type].add(highlighted_name)
+        # Find matched query in the name
+        name_matches = find_matches(
+            pattern,
+            p.name,
+            # Calculate number of chars that come before name of file or dir
+            len(final_path) - len(p.name)
+        )
+        matches[match_type].append(
+            FileDirResult(
+                path=final_path,
+                matches=name_matches
+            )
+        )
 
     # Search for files and directories name inside archive files if archive is active
     if config.archive and p_ext in ARCHIVE_EXTS[:-3]:
-        for label, name, is_dir in extract_names_from_archive(p_resolved, config):
+        for virtual_path, name, is_dir in extract_names_from_archive(p_resolved, config):
             arc_match_type = (
                 'file' if config.file and not is_dir else
                 'directory' if config.directory and is_dir else
@@ -61,12 +72,19 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Pat
             )
             
             if arc_match_type and pattern.evaluate(name.name):
-                highlighted_name = os.path.join(
-                    p_parent,
-                    f'{p.name}{label}{name.parent}',
-                    highlight_text(pattern, name.name)
+                name_matches = find_matches(
+                    pattern,
+                    name.name,
+                    # Calculate number of chars that come before name of file or dir
+                    len(str(name)) - len(name.name)
                 )
-                matches[arc_match_type].add(highlighted_name)
+                matches[arc_match_type].append(
+                    FileDirResult(
+                        path=final_path,
+                        matches=name_matches,
+                        virtual_path=[*virtual_path, str(name)]
+                    )
+                )
 
 
 def search_content(config, matches: dict, pattern, binary_pattern,
@@ -77,12 +95,12 @@ def search_content(config, matches: dict, pattern, binary_pattern,
     if p_resolved.stat().st_size == 0:
         return
 
-    # Choose the file path format based on the full_path setting
-    file_label = str(p_resolved) if config.full_path else str(p)
+    # Choose the file path format based on the absolute_path setting
+    file_label = str(p_resolved) if config.absolute_path else str(p)
 
     # First, check if the file is an archive, extract it from the archive and perform a search
     if config.archive and p_ext in ARCHIVE_EXTS:
-        for fname, content in extract_text_from_archive(p, config):
+        for virtual_path, content in extract_text_from_archive(p, config):
             if binary_pattern and not binary_pattern.search(content):
                 continue
             
@@ -92,30 +110,33 @@ def search_content(config, matches: dict, pattern, binary_pattern,
             except UnicodeDecodeError:
                 continue
 
-            # Change file_label for archive files
-            archive_label = file_label + fname
-
             lines = []
             for num, line in enumerate(decoded_content.splitlines(), 1):
                 if not pattern.evaluate(line):
                     continue
 
                 if config.paths_only:
-                    matches['content'].add(style(archive_label, fg='cyan'))
+                    matches['content'].append(
+                        ContentResult(
+                            path=file_label,
+                            virtual_path=virtual_path
+                        )
+                    )
                     break
 
-                count = pattern.count_matches(line) if isinstance(pattern, TermNode) else 0
-                # Highlight the matching parts in green
-                highlighted = highlight_text(pattern, line.strip())
-                # Show a note if the pattern repeats 3 or more times
-                count_query = f' - Repeated {count} times' if count >= 3 else ''
-                # Format the output line with line number and highlighted matches
+                line_matches = find_matches(pattern, line.strip())
                 lines.append(
-                    style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
+                    LineMatch(num, line.strip(), line_matches)
                 )
 
             if lines:
-                matches['content'][style(archive_label, fg='cyan')] = lines
+                matches['content'].append(
+                    ContentResult(
+                        path=file_label,
+                        virtual_path=virtual_path,
+                        lines=lines
+                    )
+                )
         
         # Skip next block to avoid searching the contents of archive files
         return
@@ -141,25 +162,25 @@ def search_content(config, matches: dict, pattern, binary_pattern,
             if pattern.evaluate(line_decoded):
                 # Avoid searching through the entire file content if the fast-content flag is True
                 if config.paths_only:
-                    matches['content'].add(style(file_label, fg='cyan'))
+                    matches['content'].append(
+                        ContentResult(path=file_label)
+                    )
                     break
-                count = pattern.count_matches(line_decoded) if isinstance(pattern, TermNode) else 0
-                # Highlight the matching parts in green
-                highlighted = highlight_text(pattern, line_decoded)
-                # Show a note if the pattern repeats 3 or more times
-                count_query = f' - Repeated {count} times' if count >= 3 else ''
-                # Format the output line with line number and highlighted matches
+                line_matches = find_matches(pattern, line_decoded)
                 lines.append(
-                    style(f'Line {num}{count_query}: ', fg='magenta') + highlighted
+                    LineMatch(num, line_decoded, line_matches)
                 )
 
-    # If any matching lines were found
     if lines:
-        # Add the file and its matching lines to the results
-        matches['content'][style(file_label, fg='cyan')] = lines
+        matches['content'].append(
+            ContentResult(
+                path=file_label,
+                lines=lines
+            )
+        )
 
 
-def seek(config):
+def seek(config) -> dict:
     """Main search function"""
     pattern = parse_query_expression(config)
     # If expression is simple and is a single TermNode, we can use binary pattern
@@ -170,8 +191,8 @@ def seek(config):
                 binary_pattern = pattern.get_binary_pattern()
             except Exception:
                 pass
-    # Content: key: file path, value: set of line matches
-    matches = {'directory': set(), 'file': set(), 'content': {} if not config.paths_only else set()}
+
+    matches = {'file': [], 'directory': [], 'content': []}
 
     for p in config.path.rglob('*'):
         try:

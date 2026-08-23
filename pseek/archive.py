@@ -29,7 +29,7 @@ def archive_should_skip(path_info: Path, config, p_size: float, file_ext):
 
 
 def extract_names_from_archive(file_path: Path, config, depth: int | None = None,
-                               file_bytes: bytes | None = None, parent_label: str = ''):
+                               file_bytes: bytes | None = None, parent_label: list[str] | None = None):
     """
     Recursively extract files and directories name from archive files.
     Supports nested archives like a.zip::b.7z::c.txt.
@@ -38,14 +38,14 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
         file_path (Path): the archive file path
         depth (int): the depth value that is returned recursively
         file_bytes (bytes | None): optional byte data if already read (for recursion)
-        parent_label (str): string for nested archive tracking like a.zip::b.7z::file.txt
+        parent_label (list): list for nested archive tracking like ["a.zip", "b_folder\\b.7z", "file.txt"]
 
     Yields:
-        tuple[str, Path, bool]: parent label, file or directory name, is directory
+        tuple[list, Path, bool]: parent label, file or directory name, is directory
     """
 
     file_ext = get_path_suffix(file_path)
-    label_prefix = (parent_label + str(file_path) + style('::', fg='yellow')) if parent_label else style('::', fg='yellow')
+    label_prefix = [*parent_label, str(file_path)] if parent_label is not None else []
     if depth is None:
             depth = config.depth
 
@@ -146,7 +146,7 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
 
 
 def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
-                              file_bytes: bytes | None = None, parent_label: str = ''):
+                              file_bytes: bytes | None = None, parent_label: list[str] | None = None):
     """
     Recursively extract (path_label, text_content) from any archive file.
     Supports nested archives like a.zip::b.7z::c.txt.
@@ -155,14 +155,14 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
         file_path (Path): the archive file path
         depth (int): the depth value that is returned recursively
         file_bytes (bytes | None): optional byte data if already read (for recursion)
-        parent_label (str): string for nested archive tracking like a.zip::b.7z::file.txt
+        parent_label (list): list for nested archive tracking like ["a.zip", "b_folder\\b.7z", "file.txt"]
 
     Yields:
-        (str, str): tuple of full virtual path and decoded content text
+        (list, str): list of virtual path, content text
     """
 
     file_ext = get_path_suffix(file_path)
-    label_prefix = (parent_label + str(file_path) + '::') if parent_label else '::'
+    label_prefix = [*parent_label, str(file_path)] if parent_label is not None else []
     if depth is None:
             depth = config.depth
 
@@ -193,7 +193,7 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
                         ) or info.is_dir() or new_path_ext in EXCLUDED_EXTENSIONS:
                             continue
 
-                        yield label_prefix + str(file_name), data
+                        yield [*label_prefix, str(file_name)], data
         # Handle 7Z archives
         elif file_ext == '7z':
             with py7zr.SevenZipFile(file_stream, mode='r') as archive:
@@ -218,7 +218,7 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
                         ) or info.is_directory or new_path_ext in EXCLUDED_EXTENSIONS:
                             continue
 
-                        yield label_prefix + str(file_name), data
+                        yield [*label_prefix, str(file_name)], data
         # Handle TAR and compressed TAR formats
         elif file_ext in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
             mode = {
@@ -250,11 +250,11 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
                         ) or member.isdir() or new_path_ext in EXCLUDED_EXTENSIONS:
                             continue
 
-                        yield label_prefix + str(file_name), data
+                        yield [*label_prefix, str(file_name)], data
         # Handle single compressed files like .gz, .bz2, .xz
         elif file_ext in ARCHIVE_EXTS[-3:]:
             opener = {'gz': gzip.open, 'bz2': bz2.open, 'xz': lzma.open}[file_ext]
             with opener(file_stream, 'rb') as f:
-                yield label_prefix[:-2], f.read()
+                yield label_prefix, f.read()
     except (zipfile.BadZipFile, rarfile.Error, tarfile.ReadError, OSError, EOFError):
         return

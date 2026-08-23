@@ -30,9 +30,6 @@ cpio.bz2
 cpio.gz
 cpio.xz
 cpio.zst
-csv.bz2
-csv.gz
-csv.xz
 csv.zst
 d.cts
 d.mts
@@ -95,9 +92,6 @@ it.properties
 ja.properties
 ja_JP.properties
 jar.asc
-json.bz2
-json.gz
-json.xz
 json.zst
 ko.properties
 ko_KR.properties
@@ -105,9 +99,6 @@ legacy.js
 local.yaml
 local.yml
 lock.json
-log.bz2
-log.gz
-log.xz
 log.zst
 machine.config
 manifest.json
@@ -227,9 +218,6 @@ test.js
 test.jsx
 test.ts
 test.tsx
-txt.bz2
-txt.gz
-txt.xz
 txt.zst
 types.d.ts
 umd.js

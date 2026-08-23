@@ -1,105 +1,108 @@
-import click, re
-from pathlib import Path
+import click
 from .searcher import seek
-from .utils import check_rar_backend, compile_regex
+from .utils import check_rar_backend
+from .structs import SearchConfig
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
-from dataclasses import dataclass
 
 
-@dataclass
-class SearchConfig:
-    query: str
-    path: Path
-    file: bool
-    directory: bool
-    content: bool
-    case_sensitive: bool
-    regex: bool
-    word: bool
-    expr: bool
-    timeout: int | None
-    fuzzy: bool
-    fuzzy_level: int
-    ext: set[str]
-    exclude_ext: set[str | None]
-    include: set[Path]
-    exclude: set[Path]
-    re_include: re.Pattern | None
-    re_exclude: re.Pattern | None
-    max_size: float | None
-    min_size: float | None
-    archive: bool
-    depth: int | None
-    arc_ext: set[str]
-    arc_exc_ext: set[str | None]
-    arc_include: set[Path]
-    arc_exclude: set[Path]
-    arc_max: float | None
-    arc_min: float | None
-    rar_backend: str | None
-    full_path: bool
-    paths_only: bool
+def merge_matches(matches: list[tuple[int, int]]):
+    """Merge overlapping matches (for example, if one match was inside another match)"""
+    merged = []
+    for start, end in matches:
+        if not merged or start > merged[-1][1]:  # No overlap
+            merged.append((start, end))
+        else:
+            # Merge overlapping
+            merged[-1] = (
+                merged[-1][0],
+                max(merged[-1][1], end)
+            )
     
-    def __post_init__(self):
-        """Post-initialization processing to normalize and validate inputs"""
-        self.path = Path(self.path)
-        
-        # Normalize extensions
-        self.ext = set(self.ext)
-        self.exclude_ext = (
-            set(self.exclude_ext) | {None}
-            if self.exclude_ext
-            else set()
-        )
-        self.arc_ext = set(self.arc_ext)
-        self.arc_exc_ext = (
-            set(self.arc_exc_ext) | {None}
-            if self.arc_exc_ext
-            else set()
-        )
-        
-        # Normalize include and exclude paths
-        self.include = {Path(p).resolve() for p in self.include}
-        self.exclude = {Path(p).resolve() for p in self.exclude}
-        self.arc_include = {Path(p) for p in self.arc_include}
-        self.arc_exclude = {Path(p) for p in self.arc_exclude}
-        
-        # Compile regex patterns
-        self.re_include = compile_regex(self.re_include)
-        self.re_exclude = compile_regex(self.re_exclude)
+    return merged
 
 
-def echo(results: dict) -> int:
-    """
-    Display the search results with a title.
-    Returns the count of results.
-    """
-    total_results = 0
+def build_highlight(text, matches):
+    """Build highlighted text"""
+    parts = []
+    last = 0
 
-    for match_type, paths in results.items():
-        count_result = 0
-        results_title = 'Directories' if match_type == 'directory' else match_type.title() + 's'
+    for start, end in matches:
+        parts.append(text[last:start])
+        parts.append(click.style(text[start:end], fg='green'))
+        last = end
+    parts.append(text[last:])
 
-        if paths:
-            click.secho(f'\n{results_title}:\n', fg='yellow')
-            if isinstance(paths, dict):
-                # For content search results
-                for key, value in paths.items():
-                    click.echo(key + '\n' + '\n'.join(value) + '\n')
-                    count_result += len(value)
-            else:
-                # For file/directory search results
-                count_result = len(paths)
-                click.echo('\n'.join(paths))
+    return ''.join(parts)
 
-            if count_result >= 3:
-                click.secho(f'\n{count_result} results found for {match_type}', fg='blue')
 
-        total_results += count_result
+def echo(results: dict):
+    """Display results with a specific format and color scheme"""
+    INDENT = '  '
+    LINE_INDENT = '    '
 
-    # Display final summary message.
-    message = f'\nTotal results: {total_results}' if total_results else 'No results found'
-    click.secho(message, fg='red')
+    for match_type, datas in results.items():
+        if datas:
+            RESULT_TITLES = {
+                "file": "Files",
+                "directory": "Directories",
+                "content": "Contents"
+            }
+            click.secho(f'\n{RESULT_TITLES[match_type]}:', fg='yellow')
+
+            for data in datas:
+                if match_type == 'content':  # Print a content-search result and its matching lines
+                    separator = click.style("::", fg="yellow")
+                    # Print file path
+                    click.echo(
+                        INDENT + \
+                        separator.join(
+                            [click.style(data.path, fg="cyan"), *(
+                                click.style(path, fg="cyan")
+                                for path in data.virtual_path
+                            )]
+                        )
+                    )
+                    
+                    # Print file lines
+                    for line in data.lines:
+                        matches = merge_matches(line.matches)
+                        # Keep the original count so overlapping matches are still counted separately
+                        count = len(line.matches)
+                        
+                        # Show a note if the pattern repeats 3 or more times
+                        count_query = f' ({count} matches)' if count >= 3 else ''
+                        
+                        prefix = click.style(
+                            f"Line {line.number}{count_query}: ",
+                            fg="magenta",
+                        )
+                        output_line = prefix + build_highlight(line.text, matches)
+
+                        click.echo(LINE_INDENT + output_line)
+                    
+                    # Print a blank line to separate results
+                    if data.lines:
+                        print()
+                else:  # Print a file or directory match, including archive paths
+                    matches = merge_matches(data.matches)
+                    
+                    if data.virtual_path:  # Render archive results
+                        separator = click.style("::", fg="yellow")
+                        virtual_file_name = build_highlight(
+                            data.virtual_path[-1],
+                            matches
+                        )
+
+                        click.echo(
+                            INDENT + \
+                            separator.join(
+                                [data.path, *data.virtual_path[0:-1], virtual_file_name]
+                            )
+                        )
+                    else:
+                        click.echo(
+                            INDENT + build_highlight(data.path, matches)
+                        )
 
 
 @click.command()
@@ -169,7 +172,7 @@ def echo(results: dict) -> int:
               help='Path to RAR backend tool (e.g. UnRAR.exe, ...). '
                    'Enter the file type in the query (e.g. unrar, bsdtar, unar, 7z).')
 # Output option
-@click.option('--full-path', is_flag=True, help='Display full paths for results.')
+@click.option('-a', '--absolute-path', is_flag=True, help='Display full paths for results.')
 @click.option('--paths-only', is_flag=True, help='Only show matching file paths for content search.')
 def search(**kwargs):
     """Search for files, directories, and file content based on the query."""

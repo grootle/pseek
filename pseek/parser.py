@@ -56,22 +56,6 @@ class TermNode(ExprNode):
                 score = fuzz.ratio(term, text_cmp)
             return score >= self.fuzzy_level
 
-
-    def count_matches(self, text: str) -> int:
-        """Count how many times the pattern or fuzzy term appears in the text"""
-        if not self.fuzzy:
-            return sum(1 for _ in self.pattern.finditer(text))
-
-        text_cmp = text if self.case_sensitive else text.lower()
-        term = self.raw_term if self.case_sensitive else self.raw_term.lower()
-
-        if self.whole_word:
-            words = re.findall(r'\w+', text_cmp)
-            return sum(1 for word in words if fuzz.ratio(term, word) >= self.fuzzy_level)
-
-        # Optionally could implement a sliding window here, but it's expensive
-        return 0
-
     def get_binary_pattern(self) -> re.Pattern:
         """Return a compiled binary regex pattern"""
         if self.fuzzy:
@@ -203,19 +187,21 @@ def parse_query_expression(config) -> ExprNode:
         sys.exit(1)
 
 
-def highlight_text(expr: ExprNode, text: str) -> str:
+def find_matches(expr: ExprNode, text: str, num: int = 0) -> list[tuple[int, int]]:
     """
-    Highlight matching parts of the text.
-    Only highlights fuzzy matches when whole_word=True.
+    Find all matching parts of the text.
+    Only find fuzzy matches when whole_word=True.
+    
+    num: It should be added to matches because when name is combined with parent path, matches values change.
     """
     matches = []
 
     def collect_matches(node):
         if isinstance(node, TermNode):
-            # Skip fuzzy highlight if whole_word is False
+            # Skip fuzzy if whole_word is False
             if node.fuzzy:
                 if not node.whole_word:
-                    return  # skip highlighting
+                    return  # skip finding
                 text_cmp = text if node.case_sensitive else text.lower()
                 term = node.raw_term if node.case_sensitive else node.raw_term.lower()
 
@@ -223,33 +209,16 @@ def highlight_text(expr: ExprNode, text: str) -> str:
                 for match in re.finditer(r'\w+', text_cmp):
                     word = match.group()
                     if fuzz.ratio(term, word) >= node.fuzzy_level:
-                        matches.append((match.start(), match.end()))
+                        matches.append((match.start() + num, match.end() + num))
             else:
                 for match in node.pattern.finditer(text):
-                    matches.append((match.start(), match.end()))
+                    matches.append((match.start() + num, match.end() + num))
         elif isinstance(node, (AndNode, OrNode)):
             collect_matches(node.left)
             collect_matches(node.right)
 
     collect_matches(expr)
-
-    # Sort and merge overlapping matches (for example, if one match was inside another match)
-    matches.sort()  # sort by start position
-    merged = []
-    for start, end in matches:
-        if not merged or start >= merged[-1][1]:  # no overlap
-            merged.append((start, end))
-        else:
-            # Merge overlapping
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-
-    # Build highlighted text
-    result = []
-    last = 0
-    for start, end in merged:
-        result.append(text[last:start])
-        result.append(click.style(text[start:end], fg='green'))
-        last = end
-    result.append(text[last:])
-
-    return ''.join(result)
+    # sort by start position
+    matches.sort()
+    
+    return matches
