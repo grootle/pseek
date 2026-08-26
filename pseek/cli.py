@@ -134,8 +134,8 @@ def echo(results: dict):
 @click.option('--fuzzy', is_flag=True, help='Enable fuzzy search (approximate matching). '
               'except when --expr is enabled, '
               'in which case you can make it fuzzy by putting f before term: f"foo"')
-@click.option('--fuzzy-level', type=click.IntRange(0, 99), default=80, show_default=True,
-              help='Fuzzy matching threshold (0-99). Higher values require closer matches.')
+@click.option('--fuzzy-level', type=click.IntRange(1, 99), default=80, show_default=True,
+              help='Fuzzy matching threshold (1-99). Higher values require closer matches.')
 # Extension filters
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Include files with these extensions. Example: --ext py --ext js')
@@ -184,13 +184,13 @@ def search(**kwargs):
     if not config.expr and config.fuzzy:
         if not config.word:
             click.secho(
-                "Warning: Fuzzy substring highlighting and counting matches are disabled to improve performance.\n",
+                "Warning: Fuzzy substring highlighting and counting matches are disabled to improve performance.",
                 fg="yellow"
             )
         elif config.word and " " in config.query:
             click.secho(
                 'Warning: When using "--fuzzy" and "--word", it is better to have the query be a word and '
-                'not a phrase, as this will cause errors in the results.\n',
+                'not a phrase, as this will cause errors in the results.',
                 fg="yellow"
             )
 

@@ -56,11 +56,29 @@ class TermNode(ExprNode):
                 score = fuzz.ratio(term, text_cmp)
             return score >= self.fuzzy_level
 
-    def get_binary_pattern(self) -> re.Pattern:
-        """Return a compiled binary regex pattern"""
-        if self.fuzzy:
-            raise NotImplementedError("Binary pattern is not supported for fuzzy matching.")
-        return re.compile(self.pattern.pattern.encode("utf-8"), self.pattern.flags)
+    def get_binary_pattern(self):
+        """
+        Return a binary pre-filter suitable for mmap searching
+
+        The returned matcher must never produce false negatives.
+        It's only used as a fast pre-filter; the actual match is
+        still performed on decoded text.
+        """
+
+        # Binary pattern is not supported for fuzzy matching
+        # Regex with Unicode-sensitive semantics may behave differently in bytes
+        # Unicode case-insensitive matching can't safely be reproduced with a bytes pattern
+        if self.fuzzy or self.whole_word or not self.case_sensitive:
+            return None
+        
+        if not self.regex and self.case_sensitive:
+            return self.raw_term.encode("utf-8")
+
+        pattern = self.pattern.pattern.encode("utf-8")
+        # The UNICODE flag isn't supported for bytes patterns
+        flags = self.pattern.flags & ~re.UNICODE
+
+        return re.compile(pattern, flags)
 
 
 class NotNode(ExprNode):

@@ -2,7 +2,6 @@ import re
 from pathlib import Path
 from dataclasses import dataclass, field
 from .utils import compile_regex
-from typing import Literal
 
 
 @dataclass

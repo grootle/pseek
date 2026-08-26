@@ -1,5 +1,4 @@
 import io
-from click import style
 from pathlib import Path
 from .utils import get_archive_path_size, get_path_suffix, EXCLUDED_EXTENSIONS
 # Archive modules

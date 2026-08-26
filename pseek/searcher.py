@@ -1,5 +1,4 @@
-import mmap, os
-from click import style
+import mmap
 from pathlib import Path
 from .utils import get_path_suffix, EXCLUDED_EXTENSIONS
 from .parser import parse_query_expression, TermNode, find_matches
@@ -87,6 +86,15 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Pat
                 )
 
 
+def binary_search(content, binary_pattern) -> bool:
+    if isinstance(binary_pattern, bytes):
+        if isinstance(content, mmap.mmap):
+            return content.find(binary_pattern) != -1
+        return binary_pattern in content
+
+    return binary_pattern.search(content) is not None
+
+
 def search_content(config, matches: dict, pattern, binary_pattern,
                    p: Path, p_resolved: Path, p_ext: str):
     """Search within the contents of system files and files inside archive files"""
@@ -101,7 +109,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
     # First, check if the file is an archive, extract it from the archive and perform a search
     if config.archive and p_ext in ARCHIVE_EXTS:
         for virtual_path, content in extract_text_from_archive(p, config):
-            if binary_pattern and not binary_pattern.search(content):
+            if binary_pattern and not binary_search(content, binary_pattern):
                 continue
             
             # Try decoding byte data to UTF-8 text. Continue if decoding fails
@@ -144,7 +152,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
     lines = []
     # Memory-map the file for efficient access
     with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-        if binary_pattern and not binary_pattern.search(mm):
+        if binary_pattern and not binary_search(mm, binary_pattern):
             return
 
         mm.seek(0)  # Move the cursor to the beginning of the file
@@ -185,12 +193,10 @@ def seek(config) -> dict:
     pattern = parse_query_expression(config)
     # If expression is simple and is a single TermNode, we can use binary pattern
     if config.content:
-        binary_pattern = None
         if isinstance(pattern, TermNode):
-            try:
-                binary_pattern = pattern.get_binary_pattern()
-            except Exception:
-                pass
+            binary_pattern = pattern.get_binary_pattern()
+        else:
+            binary_pattern = None
 
     matches = {'file': [], 'directory': [], 'content': []}
 
