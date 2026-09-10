@@ -2,9 +2,10 @@ import click
 from .searcher import seek
 from .utils import check_rar_backend
 from .structs import SearchConfig
-from concurrent.futures import ProcessPoolExecutor, TimeoutError
+from multiprocessing import Process, Queue
+from queue import Empty
 from collections import defaultdict
-from time import perf_counter
+import time
 
 
 def merge_matches(matches: list[tuple[int, int]]):
@@ -110,13 +111,13 @@ def echo_stats(config, results, metrics, elapsed_time=None):
 
     click.secho('Results', fg="cyan")
     if config.file:
-        click.echo(INDENT + f'Files: {len(results["file"]):,}')
+        click.echo(INDENT + f'Files matched: {len(results["file"]):,}')
     
     if config.directory:
-        click.echo(INDENT + f'Directories: {len(results["directory"]):,}')
+        click.echo(INDENT + f'Directories matched: {len(results["directory"]):,}')
 
     if config.content:
-        click.echo(INDENT + f'Files with content matches: {len(results["content"]):,}')
+        click.echo(INDENT + f'Files with matched content: {len(results["content"]):,}')
         
         lines_matched = sum(len(file.lines) for file in results["content"])
         matches = sum(
@@ -131,14 +132,114 @@ def echo_stats(config, results, metrics, elapsed_time=None):
             click.echo(INDENT + f"Matches: {matches:,}")
     
     click.secho('\nSearch', fg="cyan")
-    if metrics['files_scanned']:
+    if config.file or config.content:
         click.echo(INDENT + f"Files scanned: {len(metrics['files_scanned']):,}")
     if config.archive:
         click.echo(INDENT + f"Archives scanned: {len(metrics['archives_scanned']):,}")
     click.echo(INDENT + f"Directories scanned: {len(metrics['directories_scanned']):,}")
     
-    if not config.timeout:
-        click.echo(f"\nSearch time: {elapsed_time:.6f}s")
+    click.echo(click.style("\nSearch time: ", fg='magenta') + f'{elapsed_time:.6f}s')
+
+
+def search_worker(config, result_queue):
+    """Run the search in a separate process so it can be terminated on timeout"""
+
+    try:
+        seek(config, result_queue=result_queue)
+
+        # Tell the parent process that the search completed successfully.
+        result_queue.put(("done", None))
+    except Exception as e:
+        # Send the exception to the parent process so it can be raised there.
+        result_queue.put(("error", e))
+
+
+def drain_results(result_queue, results, metrics):
+    """Consume all messages currently available in the queue"""
+    
+    # We use "while True" because we don't know how many messages are inside the Queue.
+    # It may be empty or have 3 values in it or 5 values or more
+    while True:
+        try:
+            # get_nowait() prevents the parent process from blocking while waiting for new data.
+            # The difference from get() is that if the Queue is empty, get() waits
+            # and the timeout check afterward isn't executed, but get_nowait() raises Empty exception
+            # if the Queue is empty
+            message_type, data = result_queue.get_nowait()
+        except Empty:
+            # No more messages are currently available.
+            break
+
+        if message_type in ('file', 'directory', 'content'):
+            results[message_type].append(data)
+        elif message_type == 'metric':
+            name, value = data
+            metrics[name].add(value)
+        elif message_type == 'error':
+            raise data
+        elif message_type == 'done':
+            return True
+
+    return False
+
+
+def search_with_timeout(config):
+    """
+    Returns:
+        dict: Results found during the search
+        dict: Metrics for use in stats
+        float: The time it took for the search to finish
+        bool: Has the search hit time limit or not?
+    """
+
+    # Queue is used to safely send results and metrics from the worker
+    # process back to the parent process.
+    result_queue = Queue()
+
+    results = {
+        'file': [],
+        'directory': [],
+        'content': [],
+    }
+    metrics = defaultdict(set)
+
+    process = Process(
+        target=search_worker,
+        args=(config, result_queue),
+    )
+
+    start = time.perf_counter()
+    process.start()
+
+    while True:
+        # Collect everything the worker has produced since the last check.
+        finished = drain_results(result_queue, results, metrics)
+
+        if finished:
+            # The worker has already finished, so wait for it to exit cleanly.
+            process.join()
+
+            elapsed = time.perf_counter() - start
+            return results, metrics, elapsed, False
+
+        elapsed = time.perf_counter() - start
+
+        if elapsed >= config.timeout:
+            # The search exceeded the allowed time.
+            # Wait for OS to kill the process.
+            process.terminate()
+            process.join()
+
+            # Collect any results that were put into the queue immediately
+            # before the worker was terminated.
+            drain_results(result_queue, results, metrics)
+
+            return results, metrics, elapsed, True
+        
+        # Give the worker some time to produce more results before checking again.
+        # A short sleep also prevents the parent process from continuously
+        # consuming CPU in this loop.
+        time.sleep(0.0005)
 
 
 @click.command()
@@ -236,27 +337,24 @@ def search(**kwargs):
     if not any((config.file, config.directory, config.content)):
         config.file = config.directory = config.content = True
 
-    # Stats will be stored in this var
-    metrics = defaultdict(set)
-
-    # Stop search if it exceeds timeout (It doesn't kill the func and the func continues to execute in the background)
     if config.timeout:
-        with ProcessPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(seek, config, metrics)
-            try:
-                results = future.result(timeout=config.timeout)
-                echo(results)
-                if config.stats:
-                    echo_stats(config, results, metrics)
-            except TimeoutError:
-                click.secho(
-                    f"Timeout! Search exceeded {config.timeout} seconds and was stopped.",
-                    fg="red"
-                )
+        results, metrics, elapsed, timed_out = search_with_timeout(config)
+
+        # Even if the search timed out, display all results found before termination.
+        echo(results)
+
+        if timed_out:
+            click.secho(
+                f"\nTimeout! Search exceeded {config.timeout} seconds.",
+                fg="red",
+            )
+
+        if config.stats:
+            echo_stats(config, results, metrics, elapsed)
     else:
-        start = perf_counter()
-        results = seek(config, metrics)
-        elapsed = perf_counter() - start
+        start = time.perf_counter()
+        results, metrics = seek(config)
+        elapsed = time.perf_counter() - start
         
         echo(results)
         if config.stats:

@@ -1,5 +1,6 @@
 import mmap
 from pathlib import Path
+from collections import defaultdict
 from .utils import get_path_suffix, EXCLUDED_EXTENSIONS
 from .parser import parse_query_expression, TermNode, find_matches
 from .archive import ARCHIVE_EXTS, extract_names_from_archive, extract_text_from_archive
@@ -28,7 +29,22 @@ def should_skip(config, p_resolved: Path, file_ext: str, p_size_mb: float) -> bo
     return False
 
 
-def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Path, p_ext: str, metrics):
+def add_result(matches, result_queue, match_type, value):
+    if result_queue:
+        result_queue.put((match_type, value))
+    else:
+        matches[match_type].append(value)
+
+
+def add_metric(metrics, result_queue, name, value):
+    if result_queue:
+        result_queue.put(('metric', (name, value)))
+    else:
+        metrics[name].add(value)
+
+
+def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Path,
+                        p_ext: str, metrics, result_queue):
     """Search files and folders on the system and within archive files"""
 
     # Choose path based on absolute_path flag
@@ -48,7 +64,11 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Pat
             # Calculate number of chars that come before name of file or dir
             len(final_path) - len(p.name)
         )
-        matches[match_type].append(
+
+        add_result(
+            matches,
+            result_queue,
+            match_type,
             FileDirResult(
                 path=final_path,
                 matches=name_matches
@@ -62,14 +82,14 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Pat
                 full_virtual_path = (str(p_resolved), *virtual_path, str(name))
                 
                 if not is_dir and config.file:
-                    metrics['files_scanned'].add(full_virtual_path)
+                    add_metric(metrics, result_queue, 'files_scanned', full_virtual_path)
                 elif is_dir:
-                    metrics['directories_scanned'].add(full_virtual_path)
+                    add_metric(metrics, result_queue, 'directories_scanned', full_virtual_path)
                 
                 # We cannot use "full_virtual_path[-1]" because it may be limited by --depth
                 # and may not enter the archive at all to scan inside it
                 if len(full_virtual_path) >= 3 and get_path_suffix(full_virtual_path[-2]) in ARCHIVE_EXTS[:-3]:
-                    metrics['archives_scanned'].add(full_virtual_path)
+                    add_metric(metrics, result_queue, 'archives_scanned', full_virtual_path)
 
             arc_match_type = (
                 'file' if config.file and not is_dir else
@@ -84,7 +104,11 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Pat
                     # Calculate number of chars that come before name of file or dir
                     len(str(name)) - len(name.name)
                 )
-                matches[arc_match_type].append(
+
+                add_result(
+                    matches,
+                    result_queue,
+                    arc_match_type,
                     FileDirResult(
                         path=final_path,
                         matches=name_matches,
@@ -103,7 +127,7 @@ def binary_search(content, binary_pattern) -> bool:
 
 
 def search_content(config, matches: dict, pattern, binary_pattern,
-                   p: Path, p_resolved: Path, p_ext: str, metrics):
+                   p: Path, p_resolved: Path, p_ext: str, metrics, result_queue):
     """Search within the contents of system files and files inside archive files"""
     
     # Avoid empty files for mmap
@@ -118,11 +142,17 @@ def search_content(config, matches: dict, pattern, binary_pattern,
         for virtual_path, content in extract_text_from_archive(p, config):
             if config.stats:
                 full_virtual_path = (str(p_resolved), *virtual_path)
-                metrics['files_scanned'].add(full_virtual_path if virtual_path else str(p_resolved))
-                
+
+                add_metric(
+                    metrics,
+                    result_queue,
+                    'files_scanned',
+                    full_virtual_path if virtual_path else str(p_resolved)
+                )
+
                 if (len(full_virtual_path) >= 3 and get_path_suffix(full_virtual_path[-2]) in ARCHIVE_EXTS[:-3] \
                     or get_path_suffix(full_virtual_path[-1]) in ARCHIVE_EXTS[-3:]):
-                    metrics['archives_scanned'].add(full_virtual_path)
+                    add_metric(metrics, result_queue, 'archives_scanned', full_virtual_path)
 
             if binary_pattern and not binary_search(content, binary_pattern):
                 continue
@@ -139,12 +169,16 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                     continue
 
                 if config.paths_only:
-                    matches['content'].append(
+                    add_result(
+                        matches,
+                        result_queue,
+                        'content',
                         ContentResult(
                             path=file_label,
                             virtual_path=virtual_path
                         )
                     )
+
                     break
 
                 line_matches = find_matches(pattern, line.strip())
@@ -153,14 +187,17 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                 )
 
             if lines:
-                matches['content'].append(
+                add_result(
+                    matches,
+                    result_queue,
+                    'content',
                     ContentResult(
                         path=file_label,
                         virtual_path=virtual_path,
                         lines=lines
                     )
                 )
-        
+
         # Skip next block to avoid searching the contents of archive files
         return
 
@@ -185,9 +222,13 @@ def search_content(config, matches: dict, pattern, binary_pattern,
             if pattern.evaluate(line_decoded):
                 # Avoid searching through the entire file content if the fast-content flag is True
                 if config.paths_only:
-                    matches['content'].append(
+                    add_result(
+                        matches,
+                        result_queue,
+                        'content',
                         ContentResult(path=file_label)
                     )
+
                     break
                 line_matches = find_matches(pattern, line_decoded)
                 lines.append(
@@ -195,7 +236,10 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                 )
 
     if lines:
-        matches['content'].append(
+        add_result(
+            matches,
+            result_queue,
+            'content',
             ContentResult(
                 path=file_label,
                 lines=lines
@@ -203,7 +247,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
         )
 
 
-def seek(config, metrics) -> dict:
+def seek(config, result_queue=None) -> dict:
     """Main search function"""
     pattern = parse_query_expression(config)
     # If expression is simple and is a single TermNode, we can use binary pattern
@@ -214,6 +258,7 @@ def seek(config, metrics) -> dict:
             binary_pattern = None
 
     matches = {'file': [], 'directory': [], 'content': []}
+    metrics = defaultdict(set)
 
     for p in config.path.rglob('*'):
         try:
@@ -226,22 +271,29 @@ def seek(config, metrics) -> dict:
             continue
 
         if config.stats:
+            str_p_resolved = str(p_resolved)
+
             if p_resolved.is_file() and (config.file or config.content):
-                metrics['files_scanned'].add(str(p_resolved))
+                add_metric(metrics, result_queue, 'files_scanned', str_p_resolved)
             elif p_resolved.is_dir():
-                metrics['directories_scanned'].add(str(p_resolved))
-            
+                add_metric(metrics, result_queue, 'directories_scanned', str_p_resolved)
+
             if config.archive and p_ext in ARCHIVE_EXTS:
-                metrics['archives_scanned'].add(
-                    (str(p_resolved),)
+                add_metric(
+                    metrics,
+                    result_queue,
+                    'archives_scanned',
+                    (str_p_resolved,)
                 )
-        
+
         # Search for files and directories if requested
         if config.file or config.directory:
-            search_file_and_dir(config, matches, pattern, p, p_resolved, p_ext, metrics)
+            search_file_and_dir(config, matches, pattern, p, p_resolved,
+                                p_ext, metrics, result_queue)
         
         # Search for content inside files if requested
         if config.content and p_resolved.is_file() and p_ext not in EXCLUDED_EXTENSIONS:
-            search_content(config, matches, pattern, binary_pattern, p, p_resolved, p_ext, metrics)
+            search_content(config, matches, pattern, binary_pattern, p, p_resolved,
+                           p_ext, metrics, result_queue)
 
-    return matches
+    return matches, metrics

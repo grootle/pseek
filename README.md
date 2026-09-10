@@ -559,10 +559,62 @@ Stop the search automatically after a specified number of seconds.
 Example:
 
 ```bash
-psk "TODO" --timeout 0.1
+psk "TODO" --timeout 0.5
 ```
 
-If the search exceeds the limit, it will be terminated.
+If the search exceeds the limit, it will be terminated. Results found before the search is terminated are still displayed.
+
+## Search Statistics
+
+Display a summary of the search, including result counts, scanned paths, archive information, and search time.
+
+```bash
+pseek "config" --stats
+```
+
+Example output:
+
+```text
+Statistics
+────────────────
+Results
+  Files: 12
+  Directories matched: 3
+  Files with matched content: 8
+  Lines matched: 24
+  Matches: 31
+
+Search
+  Files scanned: 1,248
+  Archives scanned: 5
+  Directories scanned: 96
+
+Search time: 0.128s
+```
+
+### Result statistics
+
+* **Files matched** — Number of files whose names matched the query.
+* **Directories matched** — Number of directories whose names matched the query.
+* **Files with matched content** — Number of files containing at least one content match.
+* **Lines matched** — Number of lines containing one or more matches.
+* **Matches** — Total number of matches found in the contents of the files.
+
+### Search statistics
+
+* **Files scanned** — Number of files examined during the search.
+* **Archives scanned** — Number of archives processed, including nested archives found inside other archives.
+* **Directories scanned** — Number of directories reached and examined during traversal.
+
+When `--archive` is enabled, file and directory statistics can also include paths inside archives, not just physical paths on the filesystem.
+
+`Directories scanned` can be `0` when the search path contains no subdirectories. The root search directory itself isn't counted as a scanned directory.
+
+### Search time
+
+Time spent performing the search.
+
+When `--timeout` is used, the statistics represent the work completed before the timeout.
 
 ## Requirements
 
