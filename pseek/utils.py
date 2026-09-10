@@ -97,8 +97,11 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
                 rarfile.SEVENZIP_TOOL = tool
 
 
-def get_path_suffix(path: Path) -> str:
+def get_path_suffix(path: Path | str) -> str:
     """ If multiple file suffixes are valid, return them, otherwise return only the last suffix """
+    if isinstance(path, str):
+        path = Path(path)
+
     if path.is_dir():
         return None
 

@@ -37,6 +37,7 @@ class SearchConfig:
     rar_backend: str | None
     absolute_path: bool
     paths_only: bool
+    stats: bool
     
     def __post_init__(self):
         """Post-initialization processing to normalize and validate inputs"""

@@ -66,7 +66,7 @@ simultaneously.
 ## Command Options
 
 | Option | Description |
-|-|-|
+| --- | --- |
 | `--path` | Base directory to search in (default: current directory `.`) |
 | `--file` | Search only in file names |
 | `--directory` | Search only in directory names |
@@ -90,6 +90,7 @@ simultaneously.
 | `--rar-backend` | Path to RAR backend tool (e.g. UnRAR.exe, ...) |
 | `--absolute-path` | Display full path of files and directories |
 | `--paths-only` | Only show matching file paths for content search |
+| `--stats` | Show search statistics including result counts and search time |
 
 ## Search Types
 
@@ -349,6 +350,8 @@ simultaneously.
 
 Allowed modes: `r`, `c`, `w`, `f`, `rc`, `cr`, `cw`, `wc`, `cf`, `fc`, `wf`, `fw`, `cwf`, `cfw`, `wcf`, `wfc`, `fcw`, `fwc`
 
+**Note:** Whole word matching and regex matching cannot be used at the same time, because we can use `\b` in regex to enable whole word matching: `r"\btext\b"`
+
 ## Extension Filters
 
 Include only specific extensions:
@@ -556,7 +559,7 @@ Stop the search automatically after a specified number of seconds.
 Example:
 
 ```bash
-psk "TODO" --timeout 30
+psk "TODO" --timeout 0.1
 ```
 
 If the search exceeds the limit, it will be terminated.

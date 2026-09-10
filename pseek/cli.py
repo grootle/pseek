@@ -3,6 +3,8 @@ from .searcher import seek
 from .utils import check_rar_backend
 from .structs import SearchConfig
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
+from collections import defaultdict
+from time import perf_counter
 
 
 def merge_matches(matches: list[tuple[int, int]]):
@@ -37,9 +39,6 @@ def build_highlight(text, matches):
 
 def echo(results: dict):
     """Display results with a specific format and color scheme"""
-    INDENT = '  '
-    LINE_INDENT = '    '
-
     for match_type, datas in results.items():
         if datas:
             RESULT_TITLES = {
@@ -47,14 +46,13 @@ def echo(results: dict):
                 "directory": "Directories",
                 "content": "Contents"
             }
-            click.secho(f'\n{RESULT_TITLES[match_type]}:', fg='yellow')
+            click.secho(f'\n{RESULT_TITLES[match_type]}\n────────────────', fg='yellow')
 
             for data in datas:
                 if match_type == 'content':  # Print a content-search result and its matching lines
                     separator = click.style("::", fg="yellow")
                     # Print file path
                     click.echo(
-                        INDENT + \
                         separator.join(
                             [click.style(data.path, fg="cyan"), *(
                                 click.style(path, fg="cyan")
@@ -78,7 +76,7 @@ def echo(results: dict):
                         )
                         output_line = prefix + build_highlight(line.text, matches)
 
-                        click.echo(LINE_INDENT + output_line)
+                        click.echo(output_line)
                     
                     # Print a blank line to separate results
                     if data.lines:
@@ -94,15 +92,53 @@ def echo(results: dict):
                         )
 
                         click.echo(
-                            INDENT + \
                             separator.join(
                                 [data.path, *data.virtual_path[0:-1], virtual_file_name]
                             )
                         )
                     else:
                         click.echo(
-                            INDENT + build_highlight(data.path, matches)
+                            build_highlight(data.path, matches)
                         )
+
+
+def echo_stats(config, results, metrics, elapsed_time=None):
+    """Render stats in a specific format and color scheme for display in the terminal"""
+    
+    INDENT = '  '
+    click.secho('\nStatistics\n────────────────', fg='yellow')
+
+    click.secho('Results', fg="cyan")
+    if config.file:
+        click.echo(INDENT + f'Files: {len(results["file"]):,}')
+    
+    if config.directory:
+        click.echo(INDENT + f'Directories: {len(results["directory"]):,}')
+
+    if config.content:
+        click.echo(INDENT + f'Files with content matches: {len(results["content"]):,}')
+        
+        lines_matched = sum(len(file.lines) for file in results["content"])
+        matches = sum(
+            len(line.matches)
+            for file in results["content"]
+            for line in file.lines
+        )
+        
+        if lines_matched:
+            click.echo(INDENT + f"Lines matched: {lines_matched:,}")
+        if matches:
+            click.echo(INDENT + f"Matches: {matches:,}")
+    
+    click.secho('\nSearch', fg="cyan")
+    if metrics['files_scanned']:
+        click.echo(INDENT + f"Files scanned: {len(metrics['files_scanned']):,}")
+    if config.archive:
+        click.echo(INDENT + f"Archives scanned: {len(metrics['archives_scanned']):,}")
+    click.echo(INDENT + f"Directories scanned: {len(metrics['directories_scanned']):,}")
+    
+    if not config.timeout:
+        click.echo(f"\nSearch time: {elapsed_time:.6f}s")
 
 
 @click.command()
@@ -129,7 +165,7 @@ def echo(results: dict):
 @click.option('--expr', is_flag=True,
               help='Enable boolean query expressions. Example: r"foo.*bar" and ("bar" or "baz") and not "qux". '
                    'Prefixes: r=regex, c=case-sensitive, w=whole-word, f=fuzzy.')
-@click.option('--timeout', type=click.INT,
+@click.option('--timeout', type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
 @click.option('--fuzzy', is_flag=True, help='Enable fuzzy search (approximate matching). '
               'except when --expr is enabled, '
@@ -174,6 +210,8 @@ def echo(results: dict):
 # Output option
 @click.option('-a', '--absolute-path', is_flag=True, help='Display full paths for results.')
 @click.option('--paths-only', is_flag=True, help='Only show matching file paths for content search.')
+@click.option('-s', '--stats', is_flag=True,
+              help='Show search statistics including result counts and search time.')
 def search(**kwargs):
     """Search for files, directories, and file content based on the query."""
 
@@ -198,20 +236,31 @@ def search(**kwargs):
     if not any((config.file, config.directory, config.content)):
         config.file = config.directory = config.content = True
 
+    # Stats will be stored in this var
+    metrics = defaultdict(set)
+
     # Stop search if it exceeds timeout (It doesn't kill the func and the func continues to execute in the background)
     if config.timeout:
         with ProcessPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(seek, config)
+            future = executor.submit(seek, config, metrics)
             try:
-                result = future.result(timeout=config.timeout)
-                echo(result)
+                results = future.result(timeout=config.timeout)
+                echo(results)
+                if config.stats:
+                    echo_stats(config, results, metrics)
             except TimeoutError:
                 click.secho(
                     f"Timeout! Search exceeded {config.timeout} seconds and was stopped.",
                     fg="red"
                 )
     else:
-        echo(seek(config))
+        start = perf_counter()
+        results = seek(config, metrics)
+        elapsed = perf_counter() - start
+        
+        echo(results)
+        if config.stats:
+            echo_stats(config, results, metrics, elapsed)
 
 
 if __name__ == "__main__":
