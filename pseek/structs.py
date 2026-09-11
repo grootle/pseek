@@ -1,7 +1,23 @@
+from click import BadParameter
 import re
 from pathlib import Path
 from dataclasses import dataclass, field
 from .utils import compile_regex
+
+
+def resolve_relative_paths(base_path: Path, paths: tuple[str], hint_option: str):
+    resolved = set()
+
+    for path in paths:
+        p = base_path / path
+        if not p.exists():
+            raise BadParameter(
+                f"Path does not exist: {p}",
+                param_hint=f'--{hint_option}',
+            )
+        resolved.add(p.resolve())
+
+    return resolved
 
 
 @dataclass
@@ -58,8 +74,8 @@ class SearchConfig:
         )
         
         # Normalize include and exclude paths
-        self.include = {Path(p).resolve() for p in self.include}
-        self.exclude = {Path(p).resolve() for p in self.exclude}
+        self.include = resolve_relative_paths(self.path, self.include, 'include')
+        self.exclude = resolve_relative_paths(self.path, self.exclude, 'exclude')
         self.arc_include = {Path(p) for p in self.arc_include}
         self.arc_exclude = {Path(p) for p in self.arc_exclude}
         

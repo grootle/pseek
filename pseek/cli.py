@@ -244,8 +244,8 @@ def search_with_timeout(config):
 
 @click.command()
 @click.argument('query')
-@click.option('-p', '--path', type=click.Path(exists=True, file_okay=False, dir_okay=True),
-              default='.', show_default=True, help='Base directory to search in.')
+@click.argument('path', type=click.Path(exists=True, file_okay=False, dir_okay=True),
+                default='.', required=False)
 # Search type options
 @click.option('-f', '--file', is_flag=True, help='Search only in file names.')
 @click.option('-d', '--directory', is_flag=True, help='Search only in directory names.')
@@ -279,9 +279,9 @@ def search_with_timeout(config):
 @click.option('-E', '--exclude-ext', multiple=True, type=click.STRING,
               help='Exclude files with these extensions. Example: --exclude-ext jpg --exclude-ext exe')
 # Include/Exclude specific paths (files or directories)
-@click.option('-i', '--include', type=click.Path(exists=True, file_okay=True, dir_okay=True),
+@click.option('-i', '--include', type=click.Path(file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files to include in search.')
-@click.option('-e', '--exclude', type=click.Path(exists=True, file_okay=True, dir_okay=True),
+@click.option('-e', '--exclude', type=click.Path(file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files to exclude from search.')
 @click.option('--re-include', type=click.STRING,
               help='Directories or files to include in search with regex.')

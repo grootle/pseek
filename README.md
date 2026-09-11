@@ -46,13 +46,13 @@ pip install .
 ## Basic Usage
 
 ```bash
-psk <query> [options]
+psk <query> <path> [options]
 ```
 
 Example:
 
 ```bash
-psk "error"
+psk error
 ```
 
 If no search type is specified, Pseek searches:
@@ -63,11 +63,16 @@ If no search type is specified, Pseek searches:
 
 simultaneously.
 
+To search for a query that starts with `-`, use `--` to mark the end of options:
+
+```bash
+psk -- --path
+```
+
 ## Command Options
 
 | Option | Description |
 | --- | --- |
-| `--path` | Base directory to search in (default: current directory `.`) |
 | `--file` | Search only in file names |
 | `--directory` | Search only in directory names |
 | `--content` | Search within file contents |
@@ -92,36 +97,44 @@ simultaneously.
 | `--paths-only` | Only show matching file paths for content search |
 | `--stats` | Show search statistics including result counts and search time |
 
+## Specifying the root directory
+
+To search a specific directory, path can be given as a second argument:
+
+```bash
+psk error /log
+```
+
 ## Search Types
 
 ### Search File Names
 
 ```bash
-psk "config" --file
+psk config --file
 ```
 
 ### Search Directory Names
 
 ```bash
-psk "backup" --directory
+psk backup --directory
 ```
 
 ### Search File Contents
 
 ```bash
-psk "TODO" --content
+psk TODO --content
 ```
 
 ### Search Everywhere
 
 ```bash
-psk "error"
+psk error
 ```
 
 Equivalent to:
 
 ```bash
-psk "error" --file --directory --content
+psk error --file --directory --content
 ```
 
 ## Query Modes
@@ -134,59 +147,37 @@ Example:
 psk "hello world"
 ```
 
+**Note:** To use case-sensitive, whole-word matching, regular expression search, and fuzzy search when `--expr` is enabled, we can use [expression prefixes](#expression-prefixes).
+
 ### Case Sensitive Search
 
 ```bash
-psk "Hello" --case-sensitive
+psk Hello --case-sensitive
 ```
 
-Matches:
+Matches: `Hello`
 
-```text
-Hello
-```
-
-Does not match:
-
-```text
-hello
-HELLO
-```
+Does not match: `hello`, `HELLO`
 
 ### Whole Word Search
 
 ```bash
-psk "cat" --word
+psk cat --word
 ```
 
-Matches:
+Matches: `cat`
 
-```text
-cat
-```
-
-Does not match:
-
-```text
-cats
-concatenate
-```
+Does not match: `cats`, `concatenate`
 
 ### Regular Expression Search
 
 Enable regex mode:
 
 ```bash
-psk "error\d+" --regex
+psk error\d+ --regex
 ```
 
-Example matches:
-
-```text
-error1
-error25
-error999
-```
+Example matches: `error1`, `error25`, `error999`
 
 ## Fuzzy Search
 
@@ -195,21 +186,15 @@ Fuzzy search allows approximate matching.
 Example:
 
 ```bash
-psk "apple" --fuzzy
+psk apple --fuzzy
 ```
 
-Can match:
-
-```text
-appl
-appel
-aple
-```
+Can match: `appl`, `appel`, `aple`
 
 ### Fuzzy Similarity Threshold
 
 ```bash
-psk "apple" --fuzzy --fuzzy-level 90
+psk apple --fuzzy --fuzzy-level 90
 ```
 
 Range: `0-99`
@@ -357,13 +342,13 @@ Allowed modes: `r`, `c`, `w`, `f`, `rc`, `cr`, `cw`, `wc`, `cf`, `fc`, `wf`, `fw
 Include only specific extensions:
 
 ```bash
-psk "TODO" --ext py --ext js
+psk TODO --ext py --ext js
 ```
 
 Exclude extensions:
 
 ```bash
-psk "TODO" --exclude-ext exe --exclude-ext dll
+psk TODO --exclude-ext exe --exclude-ext dll
 ```
 
 ## Path Filters
@@ -371,7 +356,7 @@ psk "TODO" --exclude-ext exe --exclude-ext dll
 ### Include Paths
 
 ```bash
-psk "TODO" \
+psk TODO \
     --include src \
     --include tests
 ```
@@ -381,26 +366,28 @@ Only search inside those paths.
 ### Exclude Paths
 
 ```bash
-psk "TODO" \
+psk TODO \
     --exclude build \
     --exclude .git
 ```
 
 Skip those paths.
 
+**Note:** The include and exclude paths will be combined with path argument.
+
 ## Regex Path Filters
 
 ### Include
 
 ```bash
-psk "TODO" \
-    --re-include "src/.*"
+psk TODO \
+    --re-include src/.*
 ```
 
 ### Exclude
 
 ```bash
-psk "TODO" \
+psk TODO \
     --re-exclude "node_modules|dist"
 ```
 
@@ -411,7 +398,7 @@ Limit search by size.
 Maximum:
 
 ```bash
-psk "TODO" --max-size 100
+psk TODO --max-size 100
 ```
 
 Only search files/directories up to: `100 MB`
@@ -419,7 +406,7 @@ Only search files/directories up to: `100 MB`
 Minimum:
 
 ```bash
-psk "TODO" --min-size 10
+psk TODO --min-size 10
 ```
 
 Only search files/directories larger than: `10 MB`
@@ -429,7 +416,7 @@ Only search files/directories larger than: `10 MB`
 Enable archive support:
 
 ```bash
-psk "TODO" --archive
+psk TODO --archive
 ```
 
 Supported formats: `zip`, `rar`, `7z`, `gz`, `bz2`, `xz`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`
@@ -457,7 +444,7 @@ backup.zip::source.7z::notes.txt
 Limit recursion depth:
 
 ```bash
-psk "TODO" --archive --depth 2
+psk TODO --archive --depth 2
 ```
 
 Meaning `archive level 1` and `archive level 2` will be searched. Deeper levels will be skipped.
@@ -469,13 +456,13 @@ Meaning `archive level 1` and `archive level 2` will be searched. Deeper levels 
 ### Extension Filters
 
 ```bash
-psk "TODO" --archive --arc-ext py
+psk TODO --archive --arc-ext py
 ```
 
 Only search `.py` files inside archives.
 
 ```bash
-psk "TODO" --archive --arc-exc-ext jpg
+psk TODO --archive --arc-exc-ext jpg
 ```
 
 Exclude `.jpg` files inside archives.
@@ -485,13 +472,13 @@ Exclude `.jpg` files inside archives.
 Include:
 
 ```bash
-psk "TODO" --archive --arc-include src
+psk TODO --archive --arc-include src
 ```
 
 Exclude:
 
 ```bash
-psk "TODO" --archive --arc-exclude cache
+psk TODO --archive --arc-exclude cache
 ```
 
 ### Size Filters
@@ -499,13 +486,13 @@ psk "TODO" --archive --arc-exclude cache
 Maximum:
 
 ```bash
-psk "TODO" --archive --arc-max 10
+psk TODO --archive --arc-max 10
 ```
 
 Minimum:
 
 ```bash
-psk "TODO" --archive --arc-min 1
+psk TODO --archive --arc-min 1
 ```
 
 Values are in MB.
@@ -529,8 +516,8 @@ Use the `--rar-backend` option to persistently configure a backend and its path.
 
 Examples:
 
-- Linux: `psk "unrar" --rar-backend /usr/bin/unrar`
-- Windows: `psk "unrar" --rar-backend "C:\Program Files\WinRAR\UnRAR.exe"`
+- Linux: `psk unrar --rar-backend /usr/bin/unrar`
+- Windows: `psk unrar --rar-backend "C:\Program Files\WinRAR\UnRAR.exe"`
 
 Enter the file type in the query (e.g. `unrar`, `bsdtar`, `unar`, `7z`).
 
@@ -539,7 +526,7 @@ Enter the file type in the query (e.g. `unrar`, `bsdtar`, `unar`, `7z`).
 ### Show Full Paths
 
 ```bash
-psk "TODO" --absolute-path
+psk TODO --absolute-path
 ```
 
 ### Paths Only
@@ -547,7 +534,7 @@ psk "TODO" --absolute-path
 Only display matching file paths:
 
 ```bash
-psk "TODO" --content --paths-only
+psk TODO --content --paths-only
 ```
 
 Useful for very large result sets.
@@ -559,7 +546,7 @@ Stop the search automatically after a specified number of seconds.
 Example:
 
 ```bash
-psk "TODO" --timeout 0.5
+psk TODO --timeout 0.5
 ```
 
 If the search exceeds the limit, it will be terminated. Results found before the search is terminated are still displayed.
@@ -569,7 +556,7 @@ If the search exceeds the limit, it will be terminated. Results found before the
 Display a summary of the search, including result counts, scanned paths, archive information, and search time.
 
 ```bash
-pseek "config" --stats
+pseek config --stats
 ```
 
 Example output:
