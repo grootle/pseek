@@ -7,7 +7,7 @@ from .archive import ARCHIVE_EXTS, extract_names_from_archive, extract_text_from
 from .structs import FileDirResult, ContentResult, LineMatch
 
 
-def should_skip(config, p_resolved: Path, file_ext: str, p_size_mb: float) -> bool:
+def should_skip(config, p_resolved: Path, file_ext: str, p_size: int) -> bool:
     """
     Check whether the file/directory should be skipped based on various filters.
     Returns True if the path should be skipped.
@@ -16,8 +16,13 @@ def should_skip(config, p_resolved: Path, file_ext: str, p_size_mb: float) -> bo
             or (config.exclude and any(p_resolved.is_relative_to(exc) for exc in config.exclude)) \
             or (config.ext and file_ext not in config.ext) \
             or (config.exclude_ext and file_ext in config.exclude_ext) \
-            or (config.max_size and p_size_mb > config.max_size) \
-            or (config.min_size and p_size_mb < config.min_size):
+            or (config.size and (p_resolved.is_dir() or not any(  # .stat().st_size doesn't give actual size of dir.
+                                                                  # To measure the actual size,
+                                                                  # total size of all files inside it must be calculated,
+                                                                  # which is time-consuming
+                minimum <= p_size <= maximum
+                for minimum, maximum in config.size
+            ))):
         return True
 
     # Filter by regex include and exclude
@@ -264,10 +269,10 @@ def seek(config, result_queue=None) -> dict:
         try:
             p_resolved = p.resolve()
             p_ext = get_path_suffix(p_resolved)
-            p_size_mb = p_resolved.stat().st_size / 1_048_576  # Convert size to MB
+            p_size = p_resolved.stat().st_size
         except OSError:
             continue
-        if should_skip(config, p_resolved, p_ext, p_size_mb):
+        if should_skip(config, p_resolved, p_ext, p_size):
             continue
 
         if config.stats:

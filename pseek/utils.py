@@ -34,16 +34,6 @@ def compile_regex(txt, flags=0) -> re.Pattern | None:
             sys.exit(1)
 
 
-def get_archive_path_size(info, file_type: str) -> float:
-    """Get and return the size of the files inside the archive files in MB"""
-    if file_type in ('zip', 'rar'):
-        return info.file_size / 1_048_576
-    elif file_type == '7z':
-        return info.uncompressed / 1_048_576
-    elif file_type in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
-        return info.size / 1_048_576
-
-
 def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
     """Check for the existence of rar backend or save and set it for rarfile"""
 

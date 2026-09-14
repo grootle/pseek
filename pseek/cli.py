@@ -288,8 +288,7 @@ def search_with_timeout(config):
 @click.option('--re-exclude', type=click.STRING,
               help='Directories or files to exclude from search with regex.')
 # Size filters
-@click.option('--max-size', type=click.FLOAT, help='Maximum file/directory size (in MB).')
-@click.option('--min-size', type=click.FLOAT, help='Minimum file/directory size (in MB).')
+@click.option('--size', multiple=True, help='Limit results based on the size of files.')
 # Archive options
 @click.option('--archive', is_flag=True,
               help='Enable search within archive files (e.g. zip, rar, 7z, gz, bz2, xz, tar, tar.gz, tar.bz2, tar.xz)')
@@ -303,8 +302,7 @@ def search_with_timeout(config):
               multiple=True, help='Directories or files to include in search for inside archive files.')
 @click.option('--arc-exclude', type=click.Path(file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files to exclude from search for inside archive files.')
-@click.option('--arc-max', type=click.FLOAT, help='Maximum size of files in the archive (in MB).')
-@click.option('--arc-min', type=click.FLOAT, help='Minimum size of files in the archive (in MB).')
+@click.option('--arc-size', multiple=True, help='Limit results based on the size of files in the archive.')
 @click.option('--rar-backend', type=click.Path(exists=True, file_okay=True, dir_okay=False),
               help='Path to RAR backend tool (e.g. UnRAR.exe, ...). '
                    'Enter the file type in the query (e.g. unrar, bsdtar, unar, 7z).')

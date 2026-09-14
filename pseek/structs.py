@@ -2,22 +2,100 @@ from click import BadParameter
 import re
 from pathlib import Path
 from dataclasses import dataclass, field
+from math import isfinite
 from .utils import compile_regex
 
+SUFFIXES = {
+    'b': 1,  # B
+    'k': 2 ** 10,  # KiB
+    'm': 2 ** 20,  # MiB
+    'g': 2 ** 30,  # GiB
+    't': 2 ** 40  # TiB
+}
 
-def resolve_relative_paths(base_path: Path, paths: tuple[str], hint_option: str):
+
+def resolve_relative_paths(base_path: Path, paths: tuple[str], param_hint: str):
     resolved = set()
 
     for path in paths:
         p = base_path / path
         if not p.exists():
             raise BadParameter(
-                f"Path does not exist: {p}",
-                param_hint=f'--{hint_option}',
+                f'Path does not exist: {p}',
+                param_hint=f'--{param_hint}',
             )
         resolved.add(p.resolve())
 
     return resolved
+
+
+def extract_size(size: str, param_hint: str) -> int:
+    """Receive size with suffix, perform the validations, and convert it to bytes"""
+    
+    size_suffix = size[-1:].lower()
+    number_str = size[:-1]
+    
+    if size_suffix not in SUFFIXES:
+        raise BadParameter(
+            f'Invalid size suffix: {size_suffix}',
+            param_hint=f'--{param_hint}',
+        )
+    
+    try:
+        number = float(number_str)
+    except ValueError:
+        raise BadParameter(
+            f'Invalid size value: {number_str}',
+            param_hint=f'--{param_hint}',
+        )
+    
+    # Avoid receiving values ​​like nan and inf
+    if not isfinite(number) or number < 0:
+        raise BadParameter(
+            f'Invalid size value: {number_str}',
+            param_hint=f'--{param_hint}',
+        )
+    
+    # Convert size to B
+    return int(number * SUFFIXES[size_suffix])
+
+
+def compile_sizes(sizes: tuple[str], param_hint: str):
+    """Convert sizes list into a list of ranges"""
+    
+    ranges = []
+    
+    for size in sizes:
+        if size.startswith(':'):
+            maximum = extract_size(size[1:], param_hint)
+            ranges.append((0, maximum))
+        elif size.endswith(':'):
+            minimum = extract_size(size[:-1], param_hint)
+            ranges.append((minimum, float('inf')))
+        elif ':' in size:
+            min_str, max_str = size.split(':', 1)
+            
+            if not min_str or not max_str:
+                raise BadParameter(
+                    f'Invalid size range: {size}',
+                    param_hint=f'--{param_hint}',
+                )
+            
+            minimum = extract_size(min_str, param_hint)
+            maximum = extract_size(max_str, param_hint)
+
+            if minimum > maximum:
+                raise BadParameter(
+                    'Minimum size cannot be greater than maximum size',
+                    param_hint=f'--{param_hint}',
+                )
+            
+            ranges.append((minimum, maximum))
+        else:
+            exact = extract_size(size, param_hint)
+            ranges.append((exact, exact))
+    
+    return ranges
 
 
 @dataclass
@@ -40,16 +118,14 @@ class SearchConfig:
     exclude: set[Path]
     re_include: re.Pattern | None
     re_exclude: re.Pattern | None
-    max_size: float | None
-    min_size: float | None
+    size: list[tuple]
     archive: bool
     depth: int | None
     arc_ext: set[str]
     arc_exc_ext: set[str | None]
     arc_include: set[Path]
     arc_exclude: set[Path]
-    arc_max: float | None
-    arc_min: float | None
+    arc_size: list[tuple]
     rar_backend: str | None
     absolute_path: bool
     paths_only: bool
@@ -82,6 +158,10 @@ class SearchConfig:
         # Compile regex patterns
         self.re_include = compile_regex(self.re_include)
         self.re_exclude = compile_regex(self.re_exclude)
+        
+        # Normalize sizes
+        self.size = compile_sizes(self.size, 'size')
+        self.arc_size = compile_sizes(self.arc_size, 'arc-size')
 
 
 @dataclass

@@ -1,6 +1,6 @@
 import io
 from pathlib import Path
-from .utils import get_archive_path_size, get_path_suffix, EXCLUDED_EXTENSIONS
+from .utils import get_path_suffix, EXCLUDED_EXTENSIONS
 # Archive modules
 import zipfile, py7zr, tarfile, gzip, bz2, lzma, rarfile
 
@@ -8,15 +8,27 @@ import zipfile, py7zr, tarfile, gzip, bz2, lzma, rarfile
 ARCHIVE_EXTS = ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'gz', 'bz2', 'xz')
 
 
-def archive_should_skip(path_info: Path, config, p_size: float, file_ext):
+def get_archive_path_size(info, file_type: str) -> int:
+    """Get and return the size of the files inside the archive files"""
+    if file_type in ('zip', 'rar'):
+        return info.file_size
+    elif file_type == '7z':
+        return info.uncompressed
+    elif file_type in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
+        return info.size
+
+
+def archive_should_skip(path_info: Path, config, p_size: float, file_ext, is_dir=False):
     """Check whether the file/directory inside archive files should be skipped based on various filters"""
 
     if (config.arc_include and not any(path_info.is_relative_to(inc) for inc in config.arc_include)) \
             or (config.arc_exclude and any(path_info.is_relative_to(exc) for exc in config.arc_exclude)) \
             or (config.arc_ext and file_ext not in config.arc_ext) \
             or (config.arc_exc_ext and file_ext in config.arc_exc_ext) \
-            or (config.arc_max and p_size > config.arc_max) \
-            or (config.arc_min and p_size < config.arc_min):
+            or (config.arc_size and (is_dir or not any(
+                minimum <= p_size <= maximum
+                for minimum, maximum in config.arc_size
+            ))):
         return True
 
     if config.re_include:
@@ -59,6 +71,7 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                 for info in f.infolist():
                     name = Path(info.filename)
                     new_path_ext = get_path_suffix(name)
+                    is_dir = info.is_dir()
                     # At each recursion, subtract 1 from depth if it's set
                     new_depth = None if depth is None else depth - 1
 
@@ -66,9 +79,10 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                             name,
                             config,
                             get_archive_path_size(info, file_ext),
-                            new_path_ext
+                            new_path_ext,
+                            is_dir
                     ):
-                        yield label_prefix, name, info.is_dir()
+                        yield label_prefix, name, is_dir
 
                         # Check if this is a nested archive
                         if new_path_ext in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
@@ -85,15 +99,17 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                 for info in z.list():
                     name = Path(info.filename)
                     new_path_ext = get_path_suffix(name)
+                    is_dir = info.is_directory
                     new_depth = None if depth is None else depth - 1
 
                     if not archive_should_skip(
                             name,
                             config,
                             get_archive_path_size(info, '7z'),
-                            new_path_ext
+                            new_path_ext,
+                            is_dir
                     ):
-                        yield label_prefix, name, info.is_directory
+                        yield label_prefix, name, is_dir
 
                         if new_path_ext in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
                             file_data = z.read([info.filename]).get(info.filename)
@@ -121,15 +137,17 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                 for member in tf.getmembers():
                     name = Path(member.name)
                     new_path_ext = get_path_suffix(name)
+                    is_dir = member.isdir()
                     new_depth = None if depth is None else depth - 1
 
                     if not archive_should_skip(
                             name,
                             config,
                             get_archive_path_size(member, file_ext),
-                            new_path_ext
+                            new_path_ext,
+                            is_dir
                     ):
-                        yield label_prefix, name, member.isdir()
+                        yield label_prefix, name, is_dir
 
                         if new_path_ext in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
                             f = tf.extractfile(member)
@@ -219,7 +237,7 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
 
                     if new_path_ext in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
                         yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
-                    elif not(info.is_directory or new_path_ext in EXCLUDED_EXTENSIONS):
+                    elif not (info.is_directory or new_path_ext in EXCLUDED_EXTENSIONS):
                         yield [*label_prefix, str(file_name)], data
         # Handle TAR and compressed TAR formats
         elif file_ext in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
@@ -251,7 +269,7 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
 
                     if new_path_ext in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
                         yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
-                    elif not(member.isdir() or new_path_ext in EXCLUDED_EXTENSIONS):
+                    elif not (member.isdir() or new_path_ext in EXCLUDED_EXTENSIONS):
                         yield [*label_prefix, str(file_name)], data
         # Handle single compressed files like .gz, .bz2, .xz
         elif file_ext in ARCHIVE_EXTS[-3:]:

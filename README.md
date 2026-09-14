@@ -86,12 +86,12 @@ psk -- --path
 | `--timeout` | Stop the search after the specified number of seconds |
 | `--fuzzy` | Enable fuzzy search (Highlighting and counting matches are disabled in this mode if `--word` is not enabled to prevent the program from slowing down). except when `--expr` is enabled, in which case you can make it fuzzy by putting `f` before term: `f"foo"` |
 | `--fuzzy-level` | Fuzzy matching threshold (0-99). Higher values require closer matches (default: `80`) |
-| `--max-size`, `--min-size` | Specify maximum and minimum sizes for files and directories |
+| `--size` | Limit results based on the size of files |
 | `--archive` | Enable search within archive files (e.g. `zip`, `rar`, `7z`, `gz`, `bz2`, `xz`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`) |
 | `--depth` | Maximum nested archive depth. Example: 2 allows searching up to two archive levels |
 | `--arc-ext`, `--arc-exc-ext` | Filter by file extension inside archive files |
 | `--arc-include`, `--arc-exclude` | Limit search results to specific set of directories or files inside archive files |
-| `--arc-max`, `--arc-min` | Specify maximum and minimum sizes for files inside archive files (It doesn't work for directories because their size is zero in archive files) |
+| `--arc-size` | Limit results based on the size of files in the archive |
 | `--rar-backend` | Path to RAR backend tool (e.g. UnRAR.exe, ...) |
 | `--absolute-path` | Display full path of files and directories |
 | `--paths-only` | Only show matching file paths for content search |
@@ -197,7 +197,7 @@ Can match: `appl`, `appel`, `aple`
 psk apple --fuzzy --fuzzy-level 90
 ```
 
-Range: `0-99`
+Range: `1-99`
 
 Higher values require closer matches.
 
@@ -391,25 +391,42 @@ psk TODO \
     --re-exclude "node_modules|dist"
 ```
 
-## Size Filters
+## Size Filtering
 
-Limit search by size.
+| Syntax                    | Meaning                        |
+| ------------------------- | ------------------------------ |
+| `10m`                     | exactly `10 MiB`               |
+| `:10m`                    | `10 MiB` or smaller            |
+| `10m:`                    | `10 MiB` or larger             |
+| `10m:20m`                 | between `10 MiB` and `20 MiB`  |
 
-Maximum:
+Both range boundaries are included.
+
+Sizes can be specified using the following units:
+
+| Suffix | Unit                 |
+| ------ | -------------------- |
+| `b`    | Bytes                |
+| `k`    | KiB (`1024` bytes)   |
+| `m`    | MiB (`1024^2` bytes) |
+| `g`    | GiB (`1024^3` bytes) |
+| `t`    | TiB (`1024^4` bytes) |
+
+Unit suffixes are case-insensitive, so these are equivalent: `10m`, `10M`
+
+The `--size` option can be used multiple times. Each size filter is treated as an alternative, meaning that a file only needs to match **one** of the specified ranges.
+
+For example:
 
 ```bash
-psk TODO --max-size 100
+psk config \
+    --size :1m \
+    --size 10m:
 ```
 
-Only search files/directories up to: `100 MB`
+Files between `1 MiB` and `10 MiB` will not match.
 
-Minimum:
-
-```bash
-psk TODO --min-size 10
-```
-
-Only search files/directories larger than: `10 MB`
+**Note:** Directory sizes are not calculated recursively. When `--size` is used, directories are automatically excluded from the search results.
 
 ## Archive Search
 
@@ -481,23 +498,15 @@ Exclude:
 psk TODO --archive --arc-exclude cache
 ```
 
-### Size Filters
+### Size Filter
 
-Maximum:
-
-```bash
-psk TODO --archive --arc-max 10
-```
-
-Minimum:
+This works exactly like the [--size](#size-filtering) option.
 
 ```bash
-psk TODO --archive --arc-min 1
+psk TODO --archive --arc-size 10m:40m
 ```
 
-Values are in MB.
-
-**Note:** Archive directory sizes are usually reported as zero by archive formats, therefore archive size filtering is mainly useful for files.
+**Note:** Archive directory sizes are usually reported as zero by archive formats, so directory search is disabled if this filter is enabled to avoid incorrect results.
 
 ## RAR Backend
 
