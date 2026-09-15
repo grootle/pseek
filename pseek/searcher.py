@@ -1,4 +1,4 @@
-import mmap
+import mmap, os
 from pathlib import Path
 from collections import defaultdict
 from .utils import get_path_suffix, is_binary
@@ -12,17 +12,15 @@ def should_skip(config, p_resolved: Path, file_ext: str, p_size: int) -> bool:
     Check whether the file/directory should be skipped based on various filters.
     Returns True if the path should be skipped.
     """
-    if (config.include and not any(p_resolved.is_relative_to(inc) for inc in config.include)) \
-            or (config.exclude and any(p_resolved.is_relative_to(exc) for exc in config.exclude)) \
-            or (config.ext and file_ext not in config.ext) \
-            or (config.exclude_ext and file_ext in config.exclude_ext) \
-            or (config.size and (p_resolved.is_dir() or not any(  # .stat().st_size doesn't give actual size of dir.
-                                                                  # To measure the actual size,
-                                                                  # total size of all files inside it must be calculated,
-                                                                  # which is time-consuming
-                minimum <= p_size <= maximum
-                for minimum, maximum in config.size
-            ))):
+    if (config.ext and file_ext not in config.ext) \
+        or (config.exclude_ext and file_ext in config.exclude_ext) \
+        or (config.size and (p_resolved.is_dir() or not any(  # .stat().st_size doesn't give actual size of dir.
+                                                              # To measure the actual size,
+                                                              # total size of all files inside it must be calculated,
+                                                              # which is time-consuming
+            minimum <= p_size <= maximum
+            for minimum, maximum in config.size
+        ))):
         return True
 
     # Filter by regex include and exclude
@@ -122,7 +120,8 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path, p_resolved: Pat
                 )
 
 
-def binary_search(content, binary_pattern) -> bool:
+def content_contains(content, binary_pattern) -> bool:
+    """Fast pre-check for presence of query in file. If query isn't present, file can be skipped"""
     if isinstance(binary_pattern, bytes):
         if isinstance(content, mmap.mmap):
             return content.find(binary_pattern) != -1
@@ -134,10 +133,6 @@ def binary_search(content, binary_pattern) -> bool:
 def search_content(config, matches: dict, pattern, binary_pattern,
                    p: Path, p_resolved: Path, p_ext: str, metrics, result_queue):
     """Search within the contents of system files and files inside archive files"""
-    
-    # Avoid empty files
-    if p_resolved.stat().st_size == 0:
-        return
 
     # Choose the file path format based on the absolute_path setting
     file_label = str(p_resolved) if config.absolute_path else str(p)
@@ -159,7 +154,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                     or get_path_suffix(full_virtual_path[-1]) in ARCHIVE_EXTS[-3:]):
                     add_metric(metrics, result_queue, 'archives_scanned', full_virtual_path)
 
-            if binary_pattern and not binary_search(content, binary_pattern):
+            if binary_pattern and not content_contains(content, binary_pattern):
                 continue
             
             # Try decoding byte data to UTF-8 text. Continue if decoding fails
@@ -209,7 +204,8 @@ def search_content(config, matches: dict, pattern, binary_pattern,
     lines = []
     # Memory-map the file for efficient access
     with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-        if binary_pattern and not binary_search(mm, binary_pattern):
+        head = mm[:8192]
+        if is_binary(head) or (binary_pattern and not content_contains(mm, binary_pattern)):
             return
 
         mm.seek(0)  # Move the cursor to the beginning of the file
@@ -252,6 +248,44 @@ def search_content(config, matches: dict, pattern, binary_pattern,
         )
 
 
+def walk_logic(path: Path, exclude: set[Path]):
+    """Recursively walk a directory while pruning excluded subtrees"""
+
+    with os.scandir(path) as entries:
+        for entry in entries:
+            entry_path = Path(entry.path)
+            try:
+                entry_path_resolved = entry_path.resolve()
+            except OSError:
+                continue
+            
+            if entry_path_resolved in exclude:
+                continue
+
+            if entry.is_dir(follow_symlinks=False):
+                yield from walk_logic(entry.path, exclude)
+            yield entry_path, entry_path_resolved
+
+
+def walk(path: Path, include: set[Path], exclude: set[Path]):
+    """Include paths define traversal roots, avoiding unnecessary traversal 
+    of unrelated parts of the tree"""
+    roots = include or {path}
+
+    for root in roots:
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            continue
+
+        if root_resolved in exclude:
+            continue
+
+        if root.is_dir():
+            yield from walk_logic(root, exclude)
+        yield root, root_resolved
+
+
 def seek(config, result_queue=None) -> dict:
     """Main search function"""
     pattern = parse_query_expression(config)
@@ -265,9 +299,8 @@ def seek(config, result_queue=None) -> dict:
     matches = {'file': [], 'directory': [], 'content': []}
     metrics = defaultdict(set)
 
-    for p in config.path.rglob('*'):
+    for p, p_resolved in walk(config.path, config.include, config.exclude):
         try:
-            p_resolved = p.resolve()
             p_ext = get_path_suffix(p_resolved)
             p_size = p_resolved.stat().st_size
         except OSError:
@@ -297,7 +330,7 @@ def seek(config, result_queue=None) -> dict:
                                 p_ext, metrics, result_queue)
         
         # Search for content inside files if requested
-        if config.content and p_resolved.is_file() and not is_binary(p_resolved):
+        if config.content and p_resolved.is_file() and p_size != 0:  # Avoid empty files
             search_content(config, matches, pattern, binary_pattern, p, p_resolved,
                            p_ext, metrics, result_queue)
 

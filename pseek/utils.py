@@ -39,13 +39,6 @@ def get_path_suffix(path: Path | str) -> str:
     )
 
 
-def is_binary(file) -> bool:
+def is_binary(data) -> bool:
     """Check if a file is binary by reading the first 8 KiB and looking for null bytes."""
-    if isinstance(file, Path):
-        try:
-            with file.open('rb') as f:
-                return b'\x00' in f.read(8192)
-        except OSError:
-            return False
-    else:
-        return b'\x00' in file
+    return b'\x00' in data

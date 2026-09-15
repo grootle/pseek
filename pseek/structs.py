@@ -14,8 +14,8 @@ SUFFIXES = {
 }
 
 
-def resolve_relative_paths(base_path: Path, paths: tuple[str], param_hint: str):
-    resolved = set()
+def normalize_paths(base_path: Path, paths: tuple[str], param_hint: str):
+    result = set()
 
     for path in paths:
         p = base_path / path
@@ -24,9 +24,21 @@ def resolve_relative_paths(base_path: Path, paths: tuple[str], param_hint: str):
                 f'Path does not exist: {p}',
                 param_hint=f'--{param_hint}',
             )
-        resolved.add(p.resolve())
+        p = p.resolve() if param_hint == 'exclude' else p
 
-    return resolved
+        # Already covered by an existing parent.
+        if any(p.is_relative_to(r) for r in result):
+            continue
+
+        # Remove existing children covered by this new parent.
+        result = {
+            r for r in result
+            if not r.is_relative_to(p)
+        }
+
+        result.add(p)
+
+    return result
 
 
 def extract_size(size: str, param_hint: str) -> int:
@@ -154,8 +166,8 @@ class SearchConfig:
         )
         
         # Normalize include and exclude paths
-        self.include = resolve_relative_paths(self.path, self.include, 'include')
-        self.exclude = resolve_relative_paths(self.path, self.exclude, 'exclude')
+        self.include = normalize_paths(self.path, self.include, 'include')
+        self.exclude = normalize_paths(self.path, self.exclude, 'exclude')
         self.arc_include = {Path(p) for p in self.arc_include}
         self.arc_exclude = {Path(p) for p in self.arc_exclude}
         
