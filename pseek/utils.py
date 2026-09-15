@@ -1,17 +1,5 @@
-import re, sys, click, shutil, rarfile, platform
+import re, sys, click
 from pathlib import Path
-
-# Extensions that are not suitable for content search (binary, media, etc.)
-EXCLUDED_EXTENSIONS = (
-    'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp', 'svg',
-    'mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v', 'mpg', 'wmv',
-    'mp3', 'wav', 'ogg', 'flac', 'aac', 'wma', 'opus',
-    'exe', 'dll', 'bin', 'iso', 'img', 'dat', 'dmg', 'class', 'so', 'o', 'obj',
-    'ttf', 'otf', 'woff', 'woff2', 'eot',
-    'db', 'sqlite', 'mdf', 'bak', 'log', 'jsonl', 'dat',
-    'apk', 'ipa', 'deb', 'rpm', 'pkg', 'appimage', 'jar', 'war',
-    'pyc', 'ps1', 'pem', 'pyd', 'whl'
-)
 
 EXTENSIONS_PATH = Path(__file__).parent / "compound_extensions"
 try:
@@ -34,59 +22,6 @@ def compile_regex(txt, flags=0) -> re.Pattern | None:
             sys.exit(1)
 
 
-def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
-    """Check for the existence of rar backend or save and set it for rarfile"""
-
-    backend_path = Path(__file__).parent / "RARBackend"
-    # Save backend path for later executions
-    if tool_path:
-        if backend in ('unrar', 'bsdtar', 'unar', '7z'):
-            with open(backend_path, 'w') as f:
-                f.write(f'{backend}:{tool_path}')
-            click.secho(f"RAR backend set to: {backend} -> {tool_path}", fg="green")
-        else:
-            click.secho("Unknown RAR backend tool. Please provide one of: unrar, bsdtar, unar, 7z.", fg="red")
-        sys.exit(1)
-
-    if archive_enabled:
-        # Try to detect presence of RAR backends in PATH
-        unrar_path = shutil.which('unrar')
-        bsdtar_path = shutil.which('bsdtar')
-        sevenzip_path = shutil.which('7z') or shutil.which('7za')  # Some versions are in 7za format
-        unar_path = shutil.which('unar')
-
-        if not any((unrar_path, bsdtar_path, sevenzip_path, unar_path)) and not backend_path.exists():
-            system = platform.system()
-            if system == 'Linux':
-                install_tip = "sudo apt install unrar"
-            elif system == 'Darwin':
-                install_tip = "brew install unrar"
-            else:
-                install_tip = "Download from https://www.rarlab.com/download.htm"
-
-            click.secho(
-                "Warning: unrar, bsdtar, 7zip or unar is not installed on system or "
-                "it is not in the system PATH.\nRAR archive support is disabled.\n"
-                "To enable RAR support, please install one of them. For example:\n"
-                f"  - {install_tip}\n"
-                "If it is installed or in the system PATH and you still have problems, use this option: '--rar-backend'\n",
-                fg='yellow'
-            )
-        elif backend_path.exists():
-            with open(backend_path, 'r') as f:
-                b, tool = f.read().split(':', 1)
-
-            # Set up the backend for rarfile
-            if b == 'unrar':
-                rarfile.UNRAR_TOOL = tool
-            elif b == 'bsdtar':
-                rarfile.BSDTAR_TOOL = tool
-            elif b == 'unar':
-                rarfile.UNAR_TOOL = tool
-            elif b == '7z':
-                rarfile.SEVENZIP_TOOL = tool
-
-
 def get_path_suffix(path: Path | str) -> str:
     """ If multiple file suffixes are valid, return them, otherwise return only the last suffix """
     if isinstance(path, str):
@@ -102,3 +37,15 @@ def get_path_suffix(path: Path | str) -> str:
         if suffixes in COMPOUND_EXTENSIONS
         else path.suffix[1:].lower()
     )
+
+
+def is_binary(file) -> bool:
+    """Check if a file is binary by reading the first 8 KiB and looking for null bytes."""
+    if isinstance(file, Path):
+        try:
+            with file.open('rb') as f:
+                return b'\x00' in f.read(8192)
+        except OSError:
+            return False
+    else:
+        return b'\x00' in file

@@ -1,6 +1,6 @@
 import io
 from pathlib import Path
-from .utils import get_path_suffix, EXCLUDED_EXTENSIONS
+from .utils import get_path_suffix, is_binary
 # Archive modules
 import zipfile, py7zr, tarfile, gzip, bz2, lzma, rarfile
 
@@ -195,8 +195,10 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
             opener = {'zip': zipfile.ZipFile, 'rar': rarfile.RarFile}[file_ext]
             with opener(file_stream) as f:
                 for info in f.infolist():
+                    if info.is_dir():
+                        continue
+                    
                     file_name = Path(info.filename)
-                    data = f.read(info)
                     # At each recursion, subtract 1 from depth if it's set
                     new_depth = None if depth is None else depth - 1
                     new_path_ext = get_path_suffix(file_name)
@@ -209,21 +211,33 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
                     ):
                         continue
 
+                    with f.open(info) as entry:
+                        head = entry.read(8192)
+
+                        if is_binary(head) and new_path_ext not in ARCHIVE_EXTS:
+                            continue
+
+                        # 8 KiB has already been consumed from stream. If we use entry.read(), we will lose that 8 KiB
+                        data = head + entry.read()
+
                     # Check if this is a nested archive
-                    if new_path_ext in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
-                        yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
-                    elif not (info.is_dir() or new_path_ext in EXCLUDED_EXTENSIONS):
+                    if new_path_ext in ARCHIVE_EXTS:
+                        if (new_depth is None or new_depth >= 0):
+                            yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
+                    else:
                         yield [*label_prefix, str(file_name)], data
         # Handle 7Z archives
         elif file_ext == '7z':
             with py7zr.SevenZipFile(file_stream, mode='r') as archive:
                 for info in archive.list():
+                    if info.is_directory:
+                        continue
+                    
                     file_data = archive.read([info.filename]).get(info.filename)
                     if file_data is None:
                         continue
 
                     file_name = Path(info.filename)
-                    data = file_data.read()
                     new_depth = None if depth is None else depth - 1
                     new_path_ext = get_path_suffix(file_name)
                     
@@ -234,10 +248,16 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
                         new_path_ext
                     ):
                         continue
-
-                    if new_path_ext in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
-                        yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
-                    elif not (info.is_directory or new_path_ext in EXCLUDED_EXTENSIONS):
+                    
+                    head = file_data.read(8192)
+                    if is_binary(head) and new_path_ext not in ARCHIVE_EXTS:
+                        continue
+                    
+                    data = head + file_data.read()
+                    if new_path_ext in ARCHIVE_EXTS:
+                        if (new_depth is None or new_depth >= 0):
+                            yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
+                    else:
                         yield [*label_prefix, str(file_name)], data
         # Handle TAR and compressed TAR formats
         elif file_ext in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
@@ -250,12 +270,14 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
 
             with tarfile.open(fileobj=file_stream, mode=mode) as tf:
                 for member in tf.getmembers():
+                    if member.isdir():
+                        continue
+                    
                     f = tf.extractfile(member)
                     if f is None:
                         continue
 
                     file_name = Path(member.name)
-                    data = f.read()
                     new_depth = None if depth is None else depth - 1
                     new_path_ext = get_path_suffix(file_name)
                     
@@ -266,10 +288,16 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
                         new_path_ext
                     ):
                         continue
+                    
+                    head = f.read(8192)
+                    if is_binary(head) and new_path_ext not in ARCHIVE_EXTS:
+                        continue
 
-                    if new_path_ext in ARCHIVE_EXTS and (new_depth is None or new_depth >= 0):
-                        yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
-                    elif not (member.isdir() or new_path_ext in EXCLUDED_EXTENSIONS):
+                    data = head + f.read()
+                    if new_path_ext in ARCHIVE_EXTS:
+                        if (new_depth is None or new_depth >= 0):
+                            yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
+                    else:
                         yield [*label_prefix, str(file_name)], data
         # Handle single compressed files like .gz, .bz2, .xz
         elif file_ext in ARCHIVE_EXTS[-3:]:

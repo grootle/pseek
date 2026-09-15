@@ -1,11 +1,12 @@
-import click
+import click, time, shutil, rarfile, platform, sys
 from .searcher import seek
-from .utils import check_rar_backend
 from .structs import SearchConfig
 from multiprocessing import Process, Queue
 from queue import Empty
 from collections import defaultdict
-import time
+from pathlib import Path
+
+BACKEND_PATH = Path(__file__).parent / "RARBackend"
 
 
 def merge_matches(matches: list[tuple[int, int]]):
@@ -242,6 +243,59 @@ def search_with_timeout(config):
         time.sleep(0.0005)
 
 
+def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
+    """Check for the existence of rar backend or save and set it for rarfile"""
+
+    # Save backend path for later executions
+    if tool_path:
+        if backend in ('unrar', 'bsdtar', 'unar', '7z'):
+            with open(BACKEND_PATH, 'w') as f:
+                f.write(f'{backend}:{tool_path}')
+            click.secho(f"RAR backend set to: {backend} -> {tool_path}", fg="green")
+        else:
+            click.secho("Unknown RAR backend tool. Please provide one of: unrar, bsdtar, unar, 7z.", fg="red")
+        sys.exit(1)
+
+    if archive_enabled:
+        # Try to detect presence of RAR backends in PATH
+        unrar_path = shutil.which('unrar')
+        bsdtar_path = shutil.which('bsdtar')
+        sevenzip_path = shutil.which('7z') or shutil.which('7za')  # Some versions are in 7za format
+        unar_path = shutil.which('unar')
+
+        if not any((unrar_path, bsdtar_path, sevenzip_path, unar_path)) and not BACKEND_PATH.exists():
+            system = platform.system()
+            if system == 'Linux':
+                install_tip = "sudo apt install unrar"
+            elif system == 'Darwin':
+                install_tip = "brew install unrar"
+            else:
+                install_tip = "Download from https://www.rarlab.com/download.htm"
+
+            click.secho(
+                "Warning: unrar, bsdtar, 7zip or unar is not installed on system or "
+                "it is not in the system PATH.\nRAR archive support is disabled.\n"
+                "To enable RAR support, please install one of them. For example:\n"
+                f"  - {install_tip}\n"
+                "If it is installed or in the system PATH and you still have problems, use this option: '--rar-backend'\n",
+                fg='yellow'
+            )
+        elif BACKEND_PATH.exists():
+            with open(BACKEND_PATH, 'r') as f:
+                b, tool = f.read().split(':', 1)
+
+            # Set up the backend for rarfile
+            match b:
+                case 'unrar':
+                    rarfile.UNRAR_TOOL = tool
+                case 'bsdtar':
+                    rarfile.BSDTAR_TOOL = tool
+                case 'unar':
+                    rarfile.UNAR_TOOL = tool
+                case '7z':
+                    rarfile.SEVENZIP_TOOL = tool
+
+
 @click.command()
 @click.argument('query')
 @click.argument('path', type=click.Path(exists=True, file_okay=False, dir_okay=True),
@@ -330,10 +384,6 @@ def search(**kwargs):
                 'not a phrase, as this will cause errors in the results.',
                 fg="yellow"
             )
-
-    # If no search type is specified, search in all types.
-    if not any((config.file, config.directory, config.content)):
-        config.file = config.directory = config.content = True
 
     if config.timeout:
         results, metrics, elapsed, timed_out = search_with_timeout(config)

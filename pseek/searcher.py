@@ -1,7 +1,7 @@
 import mmap
 from pathlib import Path
 from collections import defaultdict
-from .utils import get_path_suffix, EXCLUDED_EXTENSIONS
+from .utils import get_path_suffix, is_binary
 from .parser import parse_query_expression, TermNode, find_matches
 from .archive import ARCHIVE_EXTS, extract_names_from_archive, extract_text_from_archive
 from .structs import FileDirResult, ContentResult, LineMatch
@@ -135,7 +135,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                    p: Path, p_resolved: Path, p_ext: str, metrics, result_queue):
     """Search within the contents of system files and files inside archive files"""
     
-    # Avoid empty files for mmap
+    # Avoid empty files
     if p_resolved.stat().st_size == 0:
         return
 
@@ -297,7 +297,7 @@ def seek(config, result_queue=None) -> dict:
                                 p_ext, metrics, result_queue)
         
         # Search for content inside files if requested
-        if config.content and p_resolved.is_file() and p_ext not in EXCLUDED_EXTENSIONS:
+        if config.content and p_resolved.is_file() and not is_binary(p_resolved):
             search_content(config, matches, pattern, binary_pattern, p, p_resolved,
                            p_ext, metrics, result_queue)
 

@@ -135,6 +135,10 @@ class SearchConfig:
         """Post-initialization processing to normalize and validate inputs"""
         self.path = Path(self.path)
         
+        # If no search type is specified, search in all types.
+        if not any((self.file, self.directory, self.content)):
+            self.file = self.directory = self.content = True
+        
         # Normalize extensions
         self.ext = set(self.ext)
         self.exclude_ext = (
