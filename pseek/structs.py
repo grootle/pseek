@@ -1,5 +1,5 @@
 from click import BadParameter
-import re
+import re, sys
 from pathlib import Path
 from dataclasses import dataclass, field
 from math import isfinite
@@ -14,7 +14,7 @@ SUFFIXES = {
 }
 
 
-def normalize_paths(base_path: Path, paths: tuple[str], param_hint: str):
+def normalize_paths(base_path: Path, paths: tuple[str], param_hint: str, absolute_path: bool):
     result = set()
 
     for path in paths:
@@ -24,7 +24,11 @@ def normalize_paths(base_path: Path, paths: tuple[str], param_hint: str):
                 f'Path does not exist: {p}',
                 param_hint=f'--{param_hint}',
             )
-        p = p.resolve() if param_hint == 'exclude' else p
+
+        if absolute_path:
+            p = p.resolve()
+        else:
+            p = p.resolve() if param_hint == 'exclude' else p
 
         # Already covered by an existing parent.
         if any(p.is_relative_to(r) for r in result):
@@ -146,6 +150,14 @@ class SearchConfig:
     def __post_init__(self):
         """Post-initialization processing to normalize and validate inputs"""
         self.path = Path(self.path)
+        if self.absolute_path:
+            try:
+                self.path = self.path.resolve()
+            except OSError:
+                raise BadParameter(
+                    f'Unable to resolve path: {self.path}',
+                    param_hint='path',
+                )
         
         # If no search type is specified, search in all types.
         if not any((self.file, self.directory, self.content)):
@@ -166,8 +178,8 @@ class SearchConfig:
         )
         
         # Normalize include and exclude paths
-        self.include = normalize_paths(self.path, self.include, 'include')
-        self.exclude = normalize_paths(self.path, self.exclude, 'exclude')
+        self.include = normalize_paths(self.path, self.include, 'include', self.absolute_path)
+        self.exclude = normalize_paths(self.path, self.exclude, 'exclude', self.absolute_path)
         self.arc_include = {Path(p) for p in self.arc_include}
         self.arc_exclude = {Path(p) for p in self.arc_exclude}
         
