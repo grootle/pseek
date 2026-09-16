@@ -88,7 +88,7 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
                 elif is_dir:
                     add_metric(metrics, result_queue, 'directories_scanned', full_virtual_path)
                 
-                # We cannot use "full_virtual_path[-1]" because it may be limited by --depth
+                # We cannot use "full_virtual_path[-1]" because it may be limited by --arc-depth
                 # and may not enter the archive at all to scan inside it
                 if len(full_virtual_path) >= 3 and get_path_suffix(full_virtual_path[-2]) in ARCHIVE_EXTS[:-3]:
                     add_metric(metrics, result_queue, 'archives_scanned', full_virtual_path)
@@ -246,37 +246,47 @@ def search_content(config, matches: dict, pattern, binary_pattern,
         )
 
 
-def walk_logic(path: Path, exclude: set[Path], absolute_path: bool):
+def walk_logic(path: Path, config, depth: int):
     """Recursively walk a directory while pruning excluded subtrees"""
+    
+    new_depth = depth + 1
 
-    with os.scandir(path) as entries:
-        for entry in entries:
-            entry_path = Path(entry.path)
-            if not absolute_path:
+    try:
+        with os.scandir(path) as entries:
+            for entry in entries:
+                entry_path = Path(entry.path)
+
+                # Excluded directories are pruned before recursion
+                if entry_path in config.exclude:
+                    continue
+
+                if any(mi <= new_depth <= ma for mi, ma in config.depth):
+                    yield entry_path
+
                 try:
-                    entry_path_resolved = entry_path.resolve()
+                    is_dir = entry.is_dir(follow_symlinks=False)
                 except OSError:
                     continue
-            else:
-                entry_path_resolved = entry_path
-            
-            if entry_path_resolved in exclude:
-                continue
 
-            if entry.is_dir(follow_symlinks=False):
-                yield from walk_logic(entry_path, exclude, absolute_path)
-            yield entry_path
+                if is_dir and any(new_depth < d[1] for d in config.depth):
+                    yield from walk_logic(entry_path, config, new_depth)
+    except OSError:
+        pass
 
 
-def walk(path: Path, include: set[Path], exclude: set[Path], absolute_path: bool):
+def walk(config):
     """Include paths define traversal roots, avoiding unnecessary traversal 
     of unrelated parts of the tree"""
-    roots = include or {path}
+    roots = config.include or {config.path}
 
     for root in roots:
-        if root.is_dir():
-            yield from walk_logic(root, exclude, absolute_path)
-        yield root
+        depth = len(root.relative_to(config.path).parts) - 1
+
+        if root.is_dir() and not root.is_symlink() and any(depth < d[1] for d in config.depth):
+            yield from walk_logic(root, config, depth)
+
+        if any(mi <= depth <= ma for mi, ma in config.depth):
+            yield root
 
 
 def seek(config, result_queue=None) -> dict:
@@ -292,7 +302,7 @@ def seek(config, result_queue=None) -> dict:
     matches = {'file': [], 'directory': [], 'content': []}
     metrics = defaultdict(set)
 
-    for p in walk(config.path, config.include, config.exclude, config.absolute_path):
+    for p in walk(config):
         try:
             p_ext = get_path_suffix(p)
             p_size = p.stat().st_size

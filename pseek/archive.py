@@ -39,7 +39,7 @@ def archive_should_skip(path_info: Path, config, p_size: float, file_ext, is_dir
     return False
 
 
-def extract_names_from_archive(file_path: Path, config, depth: int | None = None,
+def extract_names_from_archive(file_path: Path, config, depth: int = -1,
                                file_bytes: bytes | None = None, parent_label: list[str] | None = None):
     """
     Recursively extract files and directories name from archive files.
@@ -57,8 +57,7 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
 
     file_ext = get_path_suffix(file_path)
     label_prefix = [*parent_label, str(file_path)] if parent_label is not None else []
-    if depth is None:
-            depth = config.depth
+    new_depth = depth + 1
 
     try:
         # Decide the stream source: from disk or memory
@@ -72,8 +71,6 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                     name = Path(info.filename)
                     new_path_ext = get_path_suffix(name)
                     is_dir = info.is_dir()
-                    # At each recursion, subtract 1 from depth if it's set
-                    new_depth = None if depth is None else depth - 1
 
                     if not archive_should_skip(
                             name,
@@ -82,10 +79,11 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                             new_path_ext,
                             is_dir
                     ):
-                        yield label_prefix, name, is_dir
+                        if any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
+                            yield label_prefix, name, is_dir
 
                         # Check if this is a nested archive
-                        if new_path_ext in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
+                        if new_path_ext in ARCHIVE_EXTS[:-3] and any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_names_from_archive(
                                 name,
                                 config,
@@ -100,7 +98,6 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                     name = Path(info.filename)
                     new_path_ext = get_path_suffix(name)
                     is_dir = info.is_directory
-                    new_depth = None if depth is None else depth - 1
 
                     if not archive_should_skip(
                             name,
@@ -109,9 +106,10 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                             new_path_ext,
                             is_dir
                     ):
-                        yield label_prefix, name, is_dir
+                        if any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
+                            yield label_prefix, name, is_dir
 
-                        if new_path_ext in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
+                        if new_path_ext in ARCHIVE_EXTS[:-3] and any(new_depth < d[1] for d in config.arc_depth):
                             file_data = z.read([info.filename]).get(info.filename)
                             if file_data is None:
                                 continue
@@ -138,7 +136,6 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                     name = Path(member.name)
                     new_path_ext = get_path_suffix(name)
                     is_dir = member.isdir()
-                    new_depth = None if depth is None else depth - 1
 
                     if not archive_should_skip(
                             name,
@@ -147,9 +144,10 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
                             new_path_ext,
                             is_dir
                     ):
-                        yield label_prefix, name, is_dir
+                        if any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
+                            yield label_prefix, name, is_dir
 
-                        if new_path_ext in ARCHIVE_EXTS[:-3] and (new_depth is None or new_depth >= 0):
+                        if new_path_ext in ARCHIVE_EXTS[:-3] and any(new_depth < d[1] for d in config.arc_depth):
                             f = tf.extractfile(member)
                             if f is None:
                                 continue
@@ -165,7 +163,7 @@ def extract_names_from_archive(file_path: Path, config, depth: int | None = None
         return  # silently skip invalid or unreadable archives
 
 
-def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
+def extract_text_from_archive(file_path: Path, config, depth: int = -1,
                               file_bytes: bytes | None = None, parent_label: list[str] | None = None):
     """
     Recursively extract (path_label, text_content) from any archive file.
@@ -183,8 +181,7 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
 
     file_ext = get_path_suffix(file_path)
     label_prefix = [*parent_label, str(file_path)] if parent_label is not None else []
-    if depth is None:
-            depth = config.depth
+    new_depth = depth + 1
 
     try:
         # Decide the stream source: from disk or memory
@@ -199,8 +196,6 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
                         continue
                     
                     file_name = Path(info.filename)
-                    # At each recursion, subtract 1 from depth if it's set
-                    new_depth = None if depth is None else depth - 1
                     new_path_ext = get_path_suffix(file_name)
                     
                     if archive_should_skip(
@@ -222,9 +217,9 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
 
                     # Check if this is a nested archive
                     if new_path_ext in ARCHIVE_EXTS:
-                        if (new_depth is None or new_depth >= 0):
+                        if any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
-                    else:
+                    elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
                         yield [*label_prefix, str(file_name)], data
         # Handle 7Z archives
         elif file_ext == '7z':
@@ -238,7 +233,6 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
                         continue
 
                     file_name = Path(info.filename)
-                    new_depth = None if depth is None else depth - 1
                     new_path_ext = get_path_suffix(file_name)
                     
                     if archive_should_skip(
@@ -255,9 +249,9 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
                     
                     data = head + file_data.read()
                     if new_path_ext in ARCHIVE_EXTS:
-                        if (new_depth is None or new_depth >= 0):
+                        if any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
-                    else:
+                    elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
                         yield [*label_prefix, str(file_name)], data
         # Handle TAR and compressed TAR formats
         elif file_ext in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
@@ -278,7 +272,6 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
                         continue
 
                     file_name = Path(member.name)
-                    new_depth = None if depth is None else depth - 1
                     new_path_ext = get_path_suffix(file_name)
                     
                     if archive_should_skip(
@@ -295,9 +288,9 @@ def extract_text_from_archive(file_path: Path, config, depth: int | None = None,
 
                     data = head + f.read()
                     if new_path_ext in ARCHIVE_EXTS:
-                        if (new_depth is None or new_depth >= 0):
+                        if any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
-                    else:
+                    elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
                         yield [*label_prefix, str(file_name)], data
         # Handle single compressed files like .gz, .bz2, .xz
         elif file_ext in ARCHIVE_EXTS[-3:]:

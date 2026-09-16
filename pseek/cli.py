@@ -320,6 +320,8 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 @click.option('--expr', is_flag=True,
               help='Enable boolean query expressions. Example: r"foo.*bar" and ("bar" or "baz") and not "qux". '
                    'Prefixes: r=regex, c=case-sensitive, w=whole-word, f=fuzzy.')
+@click.option('--depth', multiple=True, help='Limit directory traversal to given depth range. '
+              'By default, there is no limit on search depth.')
 @click.option('--timeout', type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
 @click.option('--fuzzy', is_flag=True, help='Enable fuzzy search (approximate matching). '
@@ -346,8 +348,8 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 # Archive options
 @click.option('--archive', is_flag=True,
               help='Enable search within archive files (e.g. zip, rar, 7z, gz, bz2, xz, tar, tar.gz, tar.bz2, tar.xz)')
-@click.option('--depth', type=click.IntRange(min=0), show_default=True,
-              help='Maximum nested archive depth. Example: 2 allows searching up to two archive levels.')
+@click.option('--arc-depth', multiple=True,
+              help='Limit nested archive to given depth range. By default, there is no limit.')
 @click.option('--arc-ext', multiple=True, type=click.STRING,
               help='Include files with these extensions inside archive files. Example: --arc-ext py --arc-ext js')
 @click.option('--arc-exc-ext', multiple=True, type=click.STRING,

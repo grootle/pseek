@@ -83,12 +83,13 @@ psk -- --path
 | `--re-include`, `--re-exclude` | Limit search results to specific directories or files with regex |
 | `--word` | Match the whole word only (except when `--expr` is enabled, in which case you can make it match whole word by putting `w` before term: `w"foo"`) |
 | `--expr` | Enable boolean query expressions. Example: `r"foo.*bar" and ("bar" or "baz") and not "qux"`. Prefixes: `r=regex`, `c=case-sensitive`, `w=whole-word`, `f=fuzzy` |
+| `--depth` | Limit directory traversal to given depth range. By default, there is no limit on search depth |
 | `--timeout` | Stop the search after the specified number of seconds |
 | `--fuzzy` | Enable fuzzy search (Highlighting and counting matches are disabled in this mode if `--word` is not enabled to prevent the program from slowing down). except when `--expr` is enabled, in which case you can make it fuzzy by putting `f` before term: `f"foo"` |
 | `--fuzzy-level` | Fuzzy matching threshold (0-99). Higher values require closer matches (default: `80`) |
 | `--size` | Limit results based on the size of files |
 | `--archive` | Enable search within archive files (e.g. `zip`, `rar`, `7z`, `gz`, `bz2`, `xz`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`) |
-| `--depth` | Maximum nested archive depth. Example: 2 allows searching up to two archive levels |
+| `--arc-depth` | Limit nested archive to given depth range. By default, there is no limit |
 | `--arc-ext`, `--arc-exc-ext` | Filter by file extension inside archive files |
 | `--arc-include`, `--arc-exclude` | Limit search results to specific set of directories or files inside archive files |
 | `--arc-size` | Limit results based on the size of files in the archive |
@@ -147,7 +148,7 @@ Example:
 psk "hello world"
 ```
 
-**Note:** To use case-sensitive, whole-word matching, regular expression search, and fuzzy search when `--expr` is enabled, we can use [expression prefixes](#expression-prefixes).
+> **Note:** To use case-sensitive, whole-word matching, regular expression search, and fuzzy search when `--expr` is enabled, we can use [expression prefixes](#expression-prefixes).
 
 ### Case Sensitive Search
 
@@ -335,7 +336,35 @@ simultaneously.
 
 Allowed modes: `r`, `c`, `w`, `f`, `rc`, `cr`, `cw`, `wc`, `cf`, `fc`, `wf`, `fw`, `cwf`, `cfw`, `wcf`, `wfc`, `fcw`, `fwc`
 
-**Note:** Whole word matching and regex matching cannot be used at the same time, because we can use `\b` in regex to enable whole word matching: `r"\btext\b"`
+> **Note:** Whole word matching and regex matching cannot be used at the same time, because we can use `\b` in regex to enable whole word matching: `r"\btext\b"`
+
+## Depth
+
+Controls how deep the search goes inside directories.
+
+A depth of `0` means that only base path's immediate contents are searched; subdirectories are not entered.
+
+```text
+project/                  ← base directory
+├── file.txt              ← depth 0
+├── folder1/              ← depth 0
+│   ├── file.txt          ← depth 1
+│   └── folder2/          ← depth 1
+│       └── file.txt      ← depth 2
+```
+
+`--depth` can be specified multiple times to search non-contiguous depth ranges:
+
+```bash
+--depth 0              # Direct contents only
+--depth 1              # One level inside
+--depth 2:4            # Depths 2 through 4
+--depth 2 --depth 5:7  # Depths 2 and 5 through 7
+--depth :2             # Depths 0 through 2
+--depth 3:             # Depth 3 and deeper
+```
+
+If `--depth` is not specified, the search has no depth limit.
 
 ## Extension Filters
 
@@ -373,7 +402,7 @@ psk TODO \
 
 Skip those paths.
 
-**Note:** The include and exclude paths will be combined with path argument.
+> **Note:** The include and exclude paths will be combined with path argument.
 
 ## Regex Path Filters
 
@@ -426,7 +455,7 @@ psk config \
 
 Files between `1 MiB` and `10 MiB` will not match.
 
-**Note:** Directory sizes are not calculated recursively. When `--size` is used, directories are automatically excluded from the search results.
+> **Note:** Directory sizes are not calculated recursively. When `--size` is used, directories are automatically excluded from the search results.
 
 ## Archive Search
 
@@ -458,15 +487,24 @@ backup.zip::source.7z::notes.txt
 
 ### Archive Depth
 
-Limit recursion depth:
+The concept of depth in archive is different from `--depth`. Depth in archive is calculated based on nested archives. Each archive that is inside another archive counts as one level of depth.
+
+| Syntax | Meaning                                                  |
+| ------ | -------------------------------------------------------- |
+| `2`    | exactly `2nd` depth                                      |
+| `:2`   | `2nd` depth or lower                                     |
+| `2:`   | `2nd` depth or higher                                    |
+| `2:4`  | between `2` and `4` (Both range boundaries are included) |
+
+`--arc-depth` can be specified multiple times:
 
 ```bash
-psk TODO --archive --depth 2
+psk TODO --archive --arc-depth :2 --arc-depth 5:
 ```
 
-Meaning `archive level 1` and `archive level 2` will be searched. Deeper levels will be skipped.
+Meaning `archive level 3` and `archive level 4` won't be searched.
 
-**Note:** `--depth 0` means perform the search only within this current archive and don't enter nested archives.
+> **Note:** `--arc-depth 0` means perform the search only within this current archive and don't enter nested archives.
 
 ## Archive Filters
 
@@ -506,7 +544,7 @@ This works exactly like the [--size](#size-filtering) option.
 psk TODO --archive --arc-size 10m:40m
 ```
 
-**Note:** Archive directory sizes are usually reported as zero by archive formats, so directory search is disabled if this filter is enabled to avoid incorrect results.
+> **Note:** Archive directory sizes are usually reported as zero by archive formats, so directory search is disabled if this filter is enabled to avoid incorrect results.
 
 ## RAR Backend
 

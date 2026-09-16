@@ -27,8 +27,6 @@ def normalize_paths(base_path: Path, paths: tuple[str], param_hint: str, absolut
 
         if absolute_path:
             p = p.resolve()
-        else:
-            p = p.resolve() if param_hint == 'exclude' else p
 
         # Already covered by an existing parent.
         if any(p.is_relative_to(r) for r in result):
@@ -114,6 +112,51 @@ def compile_sizes(sizes: tuple[str], param_hint: str):
     return ranges
 
 
+def parse_depth(depth: str, param_hint: str) -> tuple[int, int | float]:
+    try:
+        if depth.startswith(':'):
+            maximum = depth[1:]
+
+            if not maximum.isdigit():
+                raise ValueError
+
+            return (0, int(maximum))
+        elif depth.endswith(':'):
+            minimum = depth[:-1]
+
+            if not minimum.isdigit():
+                raise ValueError
+
+            return (int(minimum), float('inf'))
+        elif ':' in depth:
+            min_str, max_str = depth.split(':', 1)
+
+            if not min_str.isdigit() or not max_str.isdigit():
+                raise ValueError
+
+            minimum = int(min_str)
+            maximum = int(max_str)
+
+            if minimum > maximum:
+                raise BadParameter(
+                    'Minimum depth cannot be greater than maximum depth',
+                    param_hint=f'--{param_hint}',
+                )
+
+            return (minimum, maximum)
+        else:
+            if not depth.isdigit():
+                raise ValueError
+
+            exact = int(depth)
+            return (exact, exact)
+    except ValueError:
+        raise BadParameter(
+            f'Invalid depth value: {depth}',
+            param_hint=f'--{param_hint}',
+        ) from None
+
+
 @dataclass
 class SearchConfig:
     query: str
@@ -125,6 +168,7 @@ class SearchConfig:
     regex: bool
     word: bool
     expr: bool
+    depth: list[tuple]
     timeout: int | None
     fuzzy: bool
     fuzzy_level: int
@@ -136,7 +180,7 @@ class SearchConfig:
     re_exclude: re.Pattern | None
     size: list[tuple]
     archive: bool
-    depth: int | None
+    arc_depth: list[tuple]
     arc_ext: set[str]
     arc_exc_ext: set[str | None]
     arc_include: set[Path]
@@ -190,6 +234,11 @@ class SearchConfig:
         # Normalize sizes
         self.size = compile_sizes(self.size, 'size')
         self.arc_size = compile_sizes(self.arc_size, 'arc-size')
+        
+        # Normalize depth
+        # If depth isn't define, don't impose limit
+        self.depth = [(0, float('inf'))] if not self.depth else [parse_depth(d, 'depth') for d in self.depth]
+        self.arc_depth = [(0, float('inf'))] if not self.arc_depth else [parse_depth(d, 'arc-depth') for d in self.arc_depth]
 
 
 @dataclass
