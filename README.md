@@ -83,6 +83,7 @@ psk -- --path
 | `--re-include`, `--re-exclude` | Limit search results to specific directories or files with regex |
 | `--word` | Match the whole word only (except when `--expr` is enabled, in which case you can make it match whole word by putting `w` before term: `w"foo"`) |
 | `--expr` | Enable boolean query expressions. Example: `r"foo.*bar" and ("bar" or "baz") and not "qux"`. Prefixes: `r=regex`, `c=case-sensitive`, `w=whole-word`, `f=fuzzy` |
+| `--context` | Show N context lines before and after matches, or use N:M to specify before:after |
 | `--depth` | Limit directory traversal to given depth range. By default, there is no limit on search depth |
 | `--timeout` | Stop the search after the specified number of seconds |
 | `--fuzzy` | Enable fuzzy search (Highlighting and counting matches are disabled in this mode if `--word` is not enabled to prevent the program from slowing down). except when `--expr` is enabled, in which case you can make it fuzzy by putting `f` before term: `f"foo"` |
@@ -337,6 +338,22 @@ simultaneously.
 Allowed modes: `r`, `c`, `w`, `f`, `rc`, `cr`, `cw`, `wc`, `cf`, `fc`, `wf`, `fw`, `cwf`, `cfw`, `wcf`, `wfc`, `fcw`, `fwc`
 
 > **Note:** Whole word matching and regex matching cannot be used at the same time, because we can use `\b` in regex to enable whole word matching: `r"\btext\b"`
+
+## Context
+
+Show context lines around each match. The value is specified as `BEFORE:AFTER`:
+
+```bash
+--context 2       # 2 lines before and after
+--context 2:0     # 2 lines before, none after
+--context 0:2     # none before, 2 lines after
+--context 2:5     # 2 lines before, 5 lines after
+--context 2:      # 2 lines before, none after
+--context :2      # none before, 2 lines after
+--context 0       # matching lines only
+```
+
+Nearby matches whose context ranges overlap or directly touch are combined into a single group.
 
 ## Depth
 

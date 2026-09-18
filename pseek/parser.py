@@ -236,7 +236,5 @@ def find_matches(expr: ExprNode, text: str, num: int = 0) -> list[tuple[int, int
             collect_matches(node.right)
 
     collect_matches(expr)
-    # sort by start position
-    matches.sort()
     
     return matches

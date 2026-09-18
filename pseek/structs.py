@@ -1,5 +1,5 @@
 from click import BadParameter
-import re, sys
+import re
 from pathlib import Path
 from dataclasses import dataclass, field
 from math import isfinite
@@ -74,87 +74,47 @@ def extract_size(size: str, param_hint: str) -> int:
     return int(number * SUFFIXES[size_suffix])
 
 
-def compile_sizes(sizes: tuple[str], param_hint: str):
-    """Convert sizes list into a list of ranges"""
-    
-    ranges = []
-    
-    for size in sizes:
-        if size.startswith(':'):
-            maximum = extract_size(size[1:], param_hint)
-            ranges.append((0, maximum))
-        elif size.endswith(':'):
-            minimum = extract_size(size[:-1], param_hint)
-            ranges.append((minimum, float('inf')))
-        elif ':' in size:
-            min_str, max_str = size.split(':', 1)
-            
-            if not min_str or not max_str:
-                raise BadParameter(
-                    f'Invalid size range: {size}',
-                    param_hint=f'--{param_hint}',
-                )
-            
-            minimum = extract_size(min_str, param_hint)
-            maximum = extract_size(max_str, param_hint)
-
-            if minimum > maximum:
-                raise BadParameter(
-                    'Minimum size cannot be greater than maximum size',
-                    param_hint=f'--{param_hint}',
-                )
-            
-            ranges.append((minimum, maximum))
-        else:
-            exact = extract_size(size, param_hint)
-            ranges.append((exact, exact))
-    
-    return ranges
-
-
-def parse_depth(depth: str, param_hint: str) -> tuple[int, int | float]:
-    try:
-        if depth.startswith(':'):
-            maximum = depth[1:]
-
-            if not maximum.isdigit():
-                raise ValueError
-
-            return (0, int(maximum))
-        elif depth.endswith(':'):
-            minimum = depth[:-1]
-
-            if not minimum.isdigit():
-                raise ValueError
-
-            return (int(minimum), float('inf'))
-        elif ':' in depth:
-            min_str, max_str = depth.split(':', 1)
-
-            if not min_str.isdigit() or not max_str.isdigit():
-                raise ValueError
-
-            minimum = int(min_str)
-            maximum = int(max_str)
-
-            if minimum > maximum:
-                raise BadParameter(
-                    'Minimum depth cannot be greater than maximum depth',
-                    param_hint=f'--{param_hint}',
-                )
-
-            return (minimum, maximum)
-        else:
-            if not depth.isdigit():
-                raise ValueError
-
-            exact = int(depth)
-            return (exact, exact)
-    except ValueError:
+def extract_int(num: str, param_hint: str) -> int:
+    if not num.isdigit():
         raise BadParameter(
-            f'Invalid depth value: {depth}',
+            f'Invalid value: {num}',
             param_hint=f'--{param_hint}',
-        ) from None
+        )
+
+    return int(num)
+
+
+def parse_range(data: str, extract_func, param_hint: str) -> tuple[int, int | float]:
+    """Parse str into a range of int or float"""
+
+    if data.startswith(':'):
+        maximum = extract_func(data[1:], param_hint)
+        return (0, maximum)
+    elif data.endswith(':'):
+        minimum = extract_func(data[:-1], param_hint)
+        return (minimum, 0 if param_hint == 'context' else float('inf'))
+    elif ':' in data:
+        min_str, max_str = data.split(':', 1)
+        
+        if not min_str or not max_str:
+            raise BadParameter(
+                f'Invalid range: {data}',
+                param_hint=f'--{param_hint}',
+            )
+        
+        minimum = extract_func(min_str, param_hint)
+        maximum = extract_func(max_str, param_hint)
+
+        if minimum > maximum and param_hint != 'context':
+            raise BadParameter(
+                'Minimum cannot be greater than maximum',
+                param_hint=f'--{param_hint}',
+            )
+        
+        return (minimum, maximum)
+    else:
+        exact = extract_func(data, param_hint)
+        return (exact, exact)
 
 
 @dataclass
@@ -190,6 +150,7 @@ class SearchConfig:
     absolute_path: bool
     paths_only: bool
     stats: bool
+    context: tuple[int]
     
     def __post_init__(self):
         """Post-initialization processing to normalize and validate inputs"""
@@ -232,13 +193,15 @@ class SearchConfig:
         self.re_exclude = compile_regex(self.re_exclude)
         
         # Normalize sizes
-        self.size = compile_sizes(self.size, 'size')
-        self.arc_size = compile_sizes(self.arc_size, 'arc-size')
+        self.size = [parse_range(s, extract_size, 'size') for s in self.size]
+        self.arc_size = [parse_range(s, extract_size, 'arc-size') for s in self.arc_size]
         
         # Normalize depth
         # If depth isn't define, don't impose limit
-        self.depth = [(0, float('inf'))] if not self.depth else [parse_depth(d, 'depth') for d in self.depth]
-        self.arc_depth = [(0, float('inf'))] if not self.arc_depth else [parse_depth(d, 'arc-depth') for d in self.arc_depth]
+        self.depth = [(0, float('inf'))] if not self.depth else [parse_range(d, extract_int, 'depth') for d in self.depth]
+        self.arc_depth = [(0, float('inf'))] if not self.arc_depth else [parse_range(d, extract_int, 'arc-depth') for d in self.arc_depth]
+
+        self.context = parse_range(self.context, extract_int, 'context') if self.context else (0, 0)
 
 
 @dataclass
@@ -253,12 +216,18 @@ class FileDirResult(SearchResult):
 
 
 @dataclass
-class LineMatch:
+class Line:
     number: int
     text: str
     matches: list[tuple[int, int]] = field(default_factory=list)
 
 
 @dataclass
+class MatchGroup:
+    lines: list[Line] = field(default_factory=list)
+    matching_lines: set[int] = field(default_factory=set)
+
+
+@dataclass
 class ContentResult(SearchResult):
-    lines: list[LineMatch] = field(default_factory=list, kw_only=True)
+    groups: list[MatchGroup] = field(default_factory=list, kw_only=True)

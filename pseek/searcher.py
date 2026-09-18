@@ -1,10 +1,10 @@
 import mmap, os
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, deque
 from .utils import get_path_suffix, is_binary
 from .parser import parse_query_expression, TermNode, find_matches
 from .archive import ARCHIVE_EXTS, extract_names_from_archive, extract_text_from_archive
-from .structs import FileDirResult, ContentResult, LineMatch
+from .structs import FileDirResult, ContentResult, MatchGroup, Line
 
 
 def should_skip(config, p: Path, file_ext: str, p_size: int) -> bool:
@@ -129,13 +129,78 @@ def content_contains(content, binary_pattern) -> bool:
     return binary_pattern.search(content) is not None
 
 
+class ContextCollector:
+    """
+    Collects matching lines and their surrounding context into
+    non-overlapping MatchGroups in a single pass.
+    """
+
+    def __init__(self, context: tuple[int, int]):
+        # Lines immediately preceding the current search position
+        self.before_buffer = deque(maxlen=context[0])
+        # Lines after the latest match, kept until the group is finalized
+        # or another match extends the same group
+        self.after_buffer = []
+        self.before = context[0]
+        self.after = context[1]
+        self.lines = []
+        self.matching_lines = set()
+        self.groups = []
+
+    def _finish_group(self):
+        self.lines.extend(self.after_buffer[:self.after])
+        self.groups.append(
+            MatchGroup(
+                self.lines,
+                self.matching_lines
+            )
+        )
+
+        self.before_buffer.clear()
+        # Preserve the latest lines as before-context for the next group.
+        self.before_buffer.extend(self.after_buffer)
+        self.after_buffer.clear()
+        # Because of ownership, we can't use .clear() here.
+        # Using it could also clear values inside MatchGroup.
+        self.lines = []
+        self.matching_lines = set()
+
+    def process(self, line: Line, matched: bool):
+        if matched:
+            if self.matching_lines:
+                self.lines.extend(self.after_buffer)
+                self.lines.append(line)
+
+                self.after_buffer.clear()
+            else:
+                self.lines.extend(self.before_buffer)
+                self.lines.append(line)
+
+            self.matching_lines.add(line.number)
+        else:
+            if self.matching_lines:
+                self.after_buffer.append(line)
+
+                # Keep groups together while their context ranges overlap or touch
+                if len(self.after_buffer) > self.after + self.before:
+                    self._finish_group()
+            else:
+                self.before_buffer.append(line)
+
+    def finish(self) -> list[MatchGroup]:
+        if self.matching_lines:
+            self._finish_group()
+
+        return self.groups
+
+
 def search_content(config, matches: dict, pattern, binary_pattern,
                    p: Path, p_ext: str, metrics, result_queue):
     """Search within the contents of system files and files inside archive files"""
 
     path_str = str(p)
 
-    # First, check if the file is an archive, extract it from the archive and perform a search
+    # Search files content inside archives separately.
     if config.archive and p_ext in ARCHIVE_EXTS:
         for virtual_path, content in extract_text_from_archive(p, config):
             if config.stats:
@@ -161,12 +226,11 @@ def search_content(config, matches: dict, pattern, binary_pattern,
             except UnicodeDecodeError:
                 continue
 
-            lines = []
+            collector = ContextCollector(config.context)
             for num, line in enumerate(decoded_content.splitlines(), 1):
-                if not pattern.evaluate(line):
-                    continue
+                matched = pattern.evaluate(line)
 
-                if config.paths_only:
+                if config.paths_only and matched:
                     add_result(
                         matches,
                         result_queue,
@@ -176,15 +240,17 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                             virtual_path=virtual_path
                         )
                     )
-
                     break
 
-                line_matches = find_matches(pattern, line.strip())
-                lines.append(
-                    LineMatch(num, line.strip(), line_matches)
-                )
+                line_instance = Line(num, line)
 
-            if lines:
+                if matched:
+                    line_instance.matches = find_matches(pattern, line)
+
+                collector.process(line_instance, matched)
+
+            groups = collector.finish()
+            if groups:
                 add_result(
                     matches,
                     result_queue,
@@ -192,14 +258,14 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                     ContentResult(
                         path=path_str,
                         virtual_path=virtual_path,
-                        lines=lines
+                        groups=groups
                     )
                 )
 
         # Skip next block to avoid searching the contents of archive files
         return
 
-    lines = []
+    collector = ContextCollector(config.context)
     # Memory-map the file for efficient access
     with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
         head = mm[:8192]
@@ -211,37 +277,39 @@ def search_content(config, matches: dict, pattern, binary_pattern,
         # Iterate over each line in the file
         for num, line in enumerate(iter(mm.readline, b''), 1):
             try:
-                # Decode the binary line as UTF-8 and strip whitespace
-                line_decoded = line.decode('utf-8').strip()
+                line_decoded = line.decode('utf-8').rstrip('\r\n')
             except UnicodeDecodeError:
                 # Skip lines that can't be decoded
                 continue
 
-            # If the pattern matches in the decoded line
-            if pattern.evaluate(line_decoded):
-                # Avoid searching through the entire file content if the fast-content flag is True
-                if config.paths_only:
-                    add_result(
-                        matches,
-                        result_queue,
-                        'content',
-                        ContentResult(path=path_str)
-                    )
+            matched = pattern.evaluate(line_decoded)
 
-                    break
-                line_matches = find_matches(pattern, line_decoded)
-                lines.append(
-                    LineMatch(num, line_decoded, line_matches)
+            # Avoid searching through the entire file content if the paths-only flag is True
+            if config.paths_only and matched:
+                add_result(
+                    matches,
+                    result_queue,
+                    'content',
+                    ContentResult(path=path_str)
                 )
+                return
 
-    if lines:
+            line_instance = Line(num, line_decoded)
+
+            if matched:
+                line_instance.matches = find_matches(pattern, line_decoded)
+
+            collector.process(line_instance, matched)
+
+    groups = collector.finish()
+    if groups:
         add_result(
             matches,
             result_queue,
             'content',
             ContentResult(
                 path=path_str,
-                lines=lines
+                groups=groups
             )
         )
 

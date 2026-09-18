@@ -11,6 +11,10 @@ BACKEND_PATH = Path(__file__).parent / "RARBackend"
 
 def merge_matches(matches: list[tuple[int, int]]):
     """Merge overlapping matches (for example, if one match was inside another match)"""
+
+    # sort by start position
+    matches.sort()
+
     merged = []
     for start, end in matches:
         if not merged or start > merged[-1][1]:  # No overlap
@@ -32,14 +36,14 @@ def build_highlight(text, matches):
 
     for start, end in matches:
         parts.append(text[last:start])
-        parts.append(click.style(text[start:end], fg='green'))
+        parts.append(click.style(text[start:end], fg='red', bold=True))
         last = end
     parts.append(text[last:])
 
     return ''.join(parts)
 
 
-def echo(results: dict):
+def echo(results: dict, context: bool):
     """Display results with a specific format and color scheme"""
     for match_type, datas in results.items():
         if datas:
@@ -62,26 +66,31 @@ def echo(results: dict):
                             )]
                         )
                     )
-                    
-                    # Print file lines
-                    for line in data.lines:
-                        matches = merge_matches(line.matches)
-                        # Keep the original count so overlapping matches are still counted separately
-                        count = len(line.matches)
-                        
-                        # Show a note if the pattern repeats 3 or more times
-                        count_query = f' ({count} matches)' if count >= 3 else ''
-                        
-                        prefix = click.style(
-                            f"Line {line.number}{count_query}: ",
-                            fg="magenta",
-                        )
-                        output_line = prefix + build_highlight(line.text, matches)
 
-                        click.echo(output_line)
-                    
+                    counter = 0
+                    for group in data.groups:
+                        if any(context):
+                            if counter != 0:
+                                print('---')
+                            else:
+                                counter = 1
+
+                        for line in group.lines:
+                            if line.number in group.matching_lines:
+                                matches = merge_matches(line.matches)
+
+                            prefix = click.style(
+                                f'{line.number}' + (':' if line.number in group.matching_lines else '-'),
+                                fg='magenta'
+                            )
+                            output_line = prefix + (build_highlight(line.text, matches) \
+                                if line.number in group.matching_lines \
+                                else line.text)
+
+                            print(output_line)
+
                     # Print a blank line to separate results
-                    if data.lines:
+                    if data.groups:
                         print()
                 else:  # Print a file or directory match, including archive paths
                     matches = merge_matches(data.matches)
@@ -93,13 +102,13 @@ def echo(results: dict):
                             matches
                         )
 
-                        click.echo(
+                        print(
                             separator.join(
                                 [data.path, *data.virtual_path[0:-1], virtual_file_name]
                             )
                         )
                     else:
-                        click.echo(
+                        print(
                             build_highlight(data.path, matches)
                         )
 
@@ -120,11 +129,11 @@ def echo_stats(config, results, metrics, elapsed_time=None):
     if config.content:
         click.echo(INDENT + f'Files with matched content: {len(results["content"]):,}')
         
-        lines_matched = sum(len(file.lines) for file in results["content"])
+        lines_matched = sum(len(group.matching_lines) for file in results["content"] for group in file.groups)
         matches = sum(
             len(line.matches)
             for file in results["content"]
-            for line in file.lines
+            for group in file.groups for line in group.lines
         )
         
         if lines_matched:
@@ -305,7 +314,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 @click.option('-d', '--directory', is_flag=True, help='Search only in directory names.')
 @click.option('-c', '--content', is_flag=True, help='Search within file contents.')
 # Additional options
-@click.option('-C', '--case-sensitive', is_flag=True,
+@click.option('-s', '--case-sensitive', is_flag=True,
               help='Make the search case-sensitive '
                    '(except when --expr is enabled, '
                    'in which case you can make it case sensitive by putting c before term: c"foo")')
@@ -320,15 +329,17 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 @click.option('--expr', is_flag=True,
               help='Enable boolean query expressions. Example: r"foo.*bar" and ("bar" or "baz") and not "qux". '
                    'Prefixes: r=regex, c=case-sensitive, w=whole-word, f=fuzzy.')
-@click.option('--depth', multiple=True, help='Limit directory traversal to given depth range. '
-              'By default, there is no limit on search depth.')
-@click.option('--timeout', type=click.FloatRange(min=0, min_open=True),
-              help='Stop the search after the specified number of seconds.')
 @click.option('--fuzzy', is_flag=True, help='Enable fuzzy search (approximate matching). '
               'except when --expr is enabled, '
               'in which case you can make it fuzzy by putting f before term: f"foo"')
 @click.option('--fuzzy-level', type=click.IntRange(1, 99), default=80, show_default=True,
               help='Fuzzy matching threshold (1-99). Higher values require closer matches.')
+@click.option('-C', '--context', help='Show N context lines before and after matches, '
+              'or use N:M to specify before:after.')
+@click.option('--depth', multiple=True, help='Limit directory traversal to given depth range. '
+              'By default, there is no limit on search depth.')
+@click.option('--timeout', type=click.FloatRange(min=0, min_open=True),
+              help='Stop the search after the specified number of seconds.')
 # Extension filters
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Include files with these extensions. Example: --ext py --ext js')
@@ -365,7 +376,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 # Output option
 @click.option('-a', '--absolute-path', is_flag=True, help='Display full paths for results.')
 @click.option('--paths-only', is_flag=True, help='Only show matching file paths for content search.')
-@click.option('-s', '--stats', is_flag=True,
+@click.option('-S', '--stats', is_flag=True,
               help='Show search statistics including result counts and search time.')
 def search(**kwargs):
     """Search for files, directories, and file content based on the query."""
@@ -391,7 +402,7 @@ def search(**kwargs):
         results, metrics, elapsed, timed_out = search_with_timeout(config)
 
         # Even if the search timed out, display all results found before termination.
-        echo(results)
+        echo(results, config.context)
 
         if timed_out:
             click.secho(
@@ -406,7 +417,7 @@ def search(**kwargs):
         results, metrics = seek(config)
         elapsed = time.perf_counter() - start
         
-        echo(results)
+        echo(results, config.context)
         if config.stats:
             echo_stats(config, results, metrics, elapsed)
 
