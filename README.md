@@ -35,12 +35,24 @@ pip install pseek
 git clone https://github.com/grootle/pseek.git
 
 cd pseek
+```
 
+Installation via pip
+
+```bash
 python -m venv venv
 
 # Activate virtual environment
 
 pip install .
+```
+
+Or just use uv
+
+```bash
+uv sync
+
+uv run pseek --help
 ```
 
 ## Basic Usage

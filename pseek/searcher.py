@@ -1,4 +1,4 @@
-import mmap, os
+import mmap, os, pignore
 from pathlib import Path
 from collections import defaultdict, deque
 from .utils import get_path_suffix, is_binary
@@ -24,10 +24,11 @@ def should_skip(config, p: Path, file_ext: str, p_size: int) -> bool:
         return True
 
     # Filter by regex include and exclude
+    str_p = str(p)
     if config.re_include:
-        return not config.re_include.search(str(p))
+        return not config.re_include.search(str_p)
     if config.re_exclude:
-        return config.re_exclude.search(str(p)) is not None
+        return config.re_exclude.search(str_p) is not None
 
     return False
 
@@ -314,10 +315,28 @@ def search_content(config, matches: dict, pattern, binary_pattern,
         )
 
 
-def walk_logic(path: Path, config, depth: int):
+def walk_logic(path: Path, config, depth: int, git_searched: bool = False,
+               matcher=None):
     """Recursively walk a directory while pruning excluded subtrees"""
-    
+
     new_depth = depth + 1
+    p_resolved = path.resolve()
+
+    # Find root git dir.
+    # Perform recursive search only first time,
+    # and after that only check current dir
+    if not git_searched:
+        # We can't use .is_dir(), because .git in git worktrees can be a file
+        git_dir = next(
+            (p for p in (p_resolved, *p_resolved.parents) if (p / '.git').exists()),
+            None
+        )
+
+        if git_dir:
+            matcher = pignore.IgnoreMatcher(git_dir.as_posix())
+    else:
+        if matcher is None and (p_resolved / '.git').exists():
+            matcher = pignore.IgnoreMatcher(p_resolved.as_posix())
 
     try:
         with os.scandir(path) as entries:
@@ -328,6 +347,13 @@ def walk_logic(path: Path, config, depth: int):
                 if entry_path in config.exclude:
                     continue
 
+                if matcher:
+                    entry_path_resolved = (entry_path.resolve() \
+                        if not config.absolute_path else entry_path).as_posix()
+
+                    if matcher.is_ignored(entry_path_resolved, entry_path.is_dir()):
+                        continue
+
                 if any(mi <= new_depth <= ma for mi, ma in config.depth):
                     yield entry_path
 
@@ -337,7 +363,13 @@ def walk_logic(path: Path, config, depth: int):
                     continue
 
                 if is_dir and any(new_depth < d[1] for d in config.depth):
-                    yield from walk_logic(entry_path, config, new_depth)
+                    yield from walk_logic(
+                        entry_path,
+                        config,
+                        new_depth,
+                        True,
+                        matcher
+                    )
     except OSError:
         pass
 

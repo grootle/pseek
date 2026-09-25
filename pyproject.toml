@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
 [project]
 name = "pseek"
@@ -47,9 +47,3 @@ Issues = "https://github.com/grootle/pseek/issues"
 
 [project.scripts]
 psk = "pseek.cli:search"
-
-[tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.package-data]
-"pseek" = ["compound_extensions"]
