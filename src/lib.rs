@@ -83,7 +83,7 @@ impl IgnoreMatcher {
 
 
 #[pymodule]
-fn pignore(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _pignore(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<IgnoreMatcher>()?;
     Ok(())
 }

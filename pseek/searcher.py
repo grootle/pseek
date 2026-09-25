@@ -1,4 +1,5 @@
-import mmap, os, pignore
+import mmap, os
+from pseek import _pignore
 from pathlib import Path
 from collections import defaultdict, deque
 from .utils import get_path_suffix, is_binary
@@ -333,10 +334,10 @@ def walk_logic(path: Path, config, depth: int, git_searched: bool = False,
         )
 
         if git_dir:
-            matcher = pignore.IgnoreMatcher(git_dir.as_posix())
+            matcher = _pignore.IgnoreMatcher(git_dir.as_posix())
     else:
         if matcher is None and (p_resolved / '.git').exists():
-            matcher = pignore.IgnoreMatcher(p_resolved.as_posix())
+            matcher = _pignore.IgnoreMatcher(p_resolved.as_posix())
 
     try:
         with os.scandir(path) as entries:

@@ -23,10 +23,12 @@ Fast and powerful command-line search tool for finding files, directories, and t
 
 ## Installation
 
+> **Note:** Pseek includes a native Rust extension. Currently, pre-built wheels are provided for Linux only. If you are installing Pseek on another platform, [Rust and Cargo](https://rust-lang.org/) must be installed so the extension can be built locally.
+
 ### Install from PyPI (Recommended)
 
 ```bash
-pip install pseek
+python -m pip install pseek
 ```
 
 ### Install from Source
@@ -42,17 +44,17 @@ Installation via pip
 ```bash
 python -m venv venv
 
-# Activate virtual environment
+# Activate the virtual environment, then install Pseek
 
-pip install .
+python -m pip install .
 ```
 
-Or just use uv
+Alternatively, if you use uv:
 
 ```bash
 uv sync
 
-uv run pseek --help
+uv run psk --help
 ```
 
 ## Basic Usage

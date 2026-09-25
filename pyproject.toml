@@ -47,3 +47,6 @@ Issues = "https://github.com/grootle/pseek/issues"
 
 [project.scripts]
 psk = "pseek.cli:search"
+
+[tool.maturin]
+module-name = "pseek._pignore"
