@@ -337,6 +337,8 @@ def walk_logic(path: Path, config, depth: int, matcher):
 
                 entry_path_resolved = (entry_path.resolve() \
                     if not config.absolute_path else entry_path).as_posix()
+
+                # Filters related to ignore rules and hidden paths
                 if matcher.is_ignored(entry_path_resolved, is_dir):
                     continue
 
@@ -370,7 +372,8 @@ def walk(config):
                 git_exclude=not config.no_ignore_exclude,
                 git_global=not config.no_ignore_global,
                 parents=not config.no_ignore_parent,
-                require_git=not config.no_require_git
+                require_git=not config.no_require_git,
+                hidden=not config.hidden
             )
 
             yield from walk_logic(root, config, depth, matcher)

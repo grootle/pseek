@@ -341,7 +341,8 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 @click.option('--timeout', type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
 # Automatic filtering
-# Related to git
+@click.option('-u', '--unrestricted', is_flag=True,
+              help='Disable all automatic filters except the binary file filter for content search.')
 @click.option('--no-ignore', is_flag=True,
               help='It disables all automatic filters related to git. '
               'This implies include --no-git-ignore, --no-ignore-dot, '
@@ -364,6 +365,11 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
               'By default, Pseek will only respect filter rules from source control ignore files '
               'when Pseek detects that the search is executed inside a source control repository. '
               'For example, when a .git directory is observed.')
+@click.option('-.', '--hidden', is_flag=True,
+              help="Search hidden files and directories. By default, hidden files and directories are skipped. "
+              "Note that if a hidden file or a directory is whitelisted in an ignore file, "
+              "then it will be searched even if this flag isn't provided. Similarly if "
+              "a hidden file or directory is given explicitly as path argument or include option.")
 # Extension filters
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Include files with these extensions. Example: --ext py --ext js')

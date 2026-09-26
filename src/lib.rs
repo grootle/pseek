@@ -20,7 +20,8 @@ impl IgnoreMatcher {
         git_global=true,
         ignore=true,
         parents=true,
-        require_git=true
+        require_git=true,
+        hidden=true
     ))]
     fn new(
         root: String,
@@ -29,7 +30,8 @@ impl IgnoreMatcher {
         git_global: bool,
         ignore: bool,
         parents: bool,
-        require_git: bool
+        require_git: bool,
+        hidden: bool
     ) -> PyResult<Self> {
         let root = PathBuf::from(root);
 
@@ -38,9 +40,8 @@ impl IgnoreMatcher {
         builder
             .standard_filters(false)
 
-            // hidden files aren't ignored.
-            // The logic for filtering hidden paths is implemented in Python
-            .hidden(false)
+            // Hidden paths (those starting with a dot)
+            .hidden(hidden)
 
             // .gitignore
             .git_ignore(git_ignore)

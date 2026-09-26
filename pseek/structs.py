@@ -132,6 +132,7 @@ class SearchConfig:
     timeout: int | None
     fuzzy: bool
     fuzzy_level: int
+    unrestricted: bool
     no_ignore: bool
     no_git_ignore: bool
     no_ignore_dot: bool
@@ -139,6 +140,7 @@ class SearchConfig:
     no_ignore_global: bool
     no_ignore_parent: bool
     no_require_git: bool
+    hidden: bool
     ext: set[str]
     exclude_ext: set[str | None]
     include: set[Path]
@@ -209,6 +211,9 @@ class SearchConfig:
         self.arc_depth = [(0, float('inf'))] if not self.arc_depth else [parse_range(d, extract_int, 'arc-depth') for d in self.arc_depth]
 
         self.context = parse_range(self.context, extract_int, 'context') if self.context else (0, 0)
+
+        if self.unrestricted:
+            self.no_ignore = self.hidden = True
 
         if self.no_ignore:
             self.no_git_ignore = self.no_ignore_dot = \
