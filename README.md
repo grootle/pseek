@@ -103,6 +103,13 @@ psk -- --path
 | `--fuzzy` | Enable fuzzy search (Highlighting and counting matches are disabled in this mode if `--word` is not enabled to prevent the program from slowing down). except when `--expr` is enabled, in which case you can make it fuzzy by putting `f` before term: `f"foo"` |
 | `--fuzzy-level` | Fuzzy matching threshold (0-99). Higher values require closer matches (default: `80`) |
 | `--size` | Limit results based on the size of files |
+| `--no-ignore` | It disables all automatic filters related to git. This implies include `--no-git-ignore`, `--no-ignore-dot`, `--no-ignore-exclude`, `--no-ignore-global`, `--no-ignore-parent` |
+| `--no-git-ignore` | Don't respect filter rules from `.gitignore` files |
+| `--no-ignore-dot` | Don't respect filter rules from `.ignore` files |
+| `--no-ignore-exclude` | Don't respect filter rules from files that are manually configured for the repository. For example, this includes git's `.git/info/exclude` |
+| `--no-ignore-global` | Don't respect filter rules from ignore files that come from `global` sources such as git's `core.excludesFile` configuration option (which defaults to `$HOME/.config/git/ignore`) |
+| `--no-ignore-parent` | When this flag is set, filter rules from ignore files found in parent directories are not respected. By default, Pseek will ascend the parent directories of the current working directory to look for any applicable ignore files that should be applied |
+| `--no-require-git` | When this flag is given, source control ignore files such as .gitignore are respected even if no git repository is present. By default, Pseek will only respect filter rules from source control ignore files when Pseek detects that the search is executed inside a source control repository. For example, when a .git directory is observed |
 | `--archive` | Enable search within archive files (e.g. `zip`, `rar`, `7z`, `gz`, `bz2`, `xz`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`) |
 | `--arc-depth` | Limit nested archive to given depth range. By default, there is no limit |
 | `--arc-ext`, `--arc-exc-ext` | Filter by file extension inside archive files |
@@ -487,6 +494,33 @@ psk config \
 Files between `1 MiB` and `10 MiB` will not match.
 
 > **Note:** Directory sizes are not calculated recursively. When `--size` is used, directories are automatically excluded from the search results.
+
+## Automatic filtering
+
+Pseek automatically filters files and directories during recursive searches using the same ignore-matching backend and ignore-rule semantics used by [ripgrep](https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md#automatic-filtering).
+
+By default, Pseek will ignore all of the following:
+
+1. Files and directories that match glob patterns in these sources:
+    * `.gitignore` globs. This includes .gitignore files in parent directories that are part of the same git repository. (Unless the `--no-require-git` flag is given)
+    * `.git/info/exclude`
+    * Git's global ignore file configured through `core.excludesFile`
+    * `.ignore` globs, which take precedence over all gitignore globs when there's a conflict. This includes `.ignore` files in parent directories.
+    * Ignore files from parent directories, when applicable (Unless the `--no-ignore-parent` flag is given)
+2. Binary files for content search. (any file with a NUL byte to be binary)
+
+The rules are interpreted using the same matching and precedence semantics as ripgrep.
+
+When ignore files at different directory levels define conflicting rules, rules from a **deeper directory take precedence over rules inherited from its parent directories**.
+
+Within the same directory level, ignore sources are applied with the following precedence, from highest to lowest:
+
+```text
+.ignore
+.gitignore
+.git/info/exclude
+global Git excludes (core.excludesFile)
+```
 
 ## Archive Search
 

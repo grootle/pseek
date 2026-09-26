@@ -316,28 +316,10 @@ def search_content(config, matches: dict, pattern, binary_pattern,
         )
 
 
-def walk_logic(path: Path, config, depth: int, git_searched: bool = False,
-               matcher=None):
+def walk_logic(path: Path, config, depth: int, matcher):
     """Recursively walk a directory while pruning excluded subtrees"""
 
     new_depth = depth + 1
-    p_resolved = path.resolve()
-
-    # Find root git dir.
-    # Perform recursive search only first time,
-    # and after that only check current dir
-    if not git_searched:
-        # We can't use .is_dir(), because .git in git worktrees can be a file
-        git_dir = next(
-            (p for p in (p_resolved, *p_resolved.parents) if (p / '.git').exists()),
-            None
-        )
-
-        if git_dir:
-            matcher = _pignore.IgnoreMatcher(git_dir.as_posix())
-    else:
-        if matcher is None and (p_resolved / '.git').exists():
-            matcher = _pignore.IgnoreMatcher(p_resolved.as_posix())
 
     try:
         with os.scandir(path) as entries:
@@ -348,27 +330,24 @@ def walk_logic(path: Path, config, depth: int, git_searched: bool = False,
                 if entry_path in config.exclude:
                     continue
 
-                if matcher:
-                    entry_path_resolved = (entry_path.resolve() \
-                        if not config.absolute_path else entry_path).as_posix()
-
-                    if matcher.is_ignored(entry_path_resolved, entry_path.is_dir()):
-                        continue
-
-                if any(mi <= new_depth <= ma for mi, ma in config.depth):
-                    yield entry_path
-
                 try:
                     is_dir = entry.is_dir(follow_symlinks=False)
                 except OSError:
                     continue
+
+                entry_path_resolved = (entry_path.resolve() \
+                    if not config.absolute_path else entry_path).as_posix()
+                if matcher.is_ignored(entry_path_resolved, is_dir):
+                    continue
+
+                if any(mi <= new_depth <= ma for mi, ma in config.depth):
+                    yield entry_path
 
                 if is_dir and any(new_depth < d[1] for d in config.depth):
                     yield from walk_logic(
                         entry_path,
                         config,
                         new_depth,
-                        True,
                         matcher
                     )
     except OSError:
@@ -384,7 +363,17 @@ def walk(config):
         depth = len(root.relative_to(config.path).parts) - 1
 
         if root.is_dir() and not root.is_symlink() and any(depth < d[1] for d in config.depth):
-            yield from walk_logic(root, config, depth)
+            matcher = _pignore.IgnoreMatcher(
+                root.resolve().as_posix(),
+                git_ignore=not config.no_git_ignore,
+                ignore=not config.no_ignore_dot,
+                git_exclude=not config.no_ignore_exclude,
+                git_global=not config.no_ignore_global,
+                parents=not config.no_ignore_parent,
+                require_git=not config.no_require_git
+            )
+
+            yield from walk_logic(root, config, depth, matcher)
 
         if any(mi <= depth <= ma for mi, ma in config.depth):
             yield root

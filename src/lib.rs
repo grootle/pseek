@@ -13,7 +13,24 @@ struct IgnoreMatcher {
 #[pymethods]
 impl IgnoreMatcher {
     #[new]
-    fn new(root: String) -> PyResult<Self> {
+    #[pyo3(signature = (
+        root,
+        git_ignore=true,
+        git_exclude=true,
+        git_global=true,
+        ignore=true,
+        parents=true,
+        require_git=true
+    ))]
+    fn new(
+        root: String,
+        git_ignore: bool,
+        git_exclude: bool,
+        git_global: bool,
+        ignore: bool,
+        parents: bool,
+        require_git: bool
+    ) -> PyResult<Self> {
         let root = PathBuf::from(root);
 
         let mut builder = WalkBuilder::new(&root);
@@ -21,27 +38,28 @@ impl IgnoreMatcher {
         builder
             .standard_filters(false)
 
-            // hidden files aren't ignored
+            // hidden files aren't ignored.
+            // The logic for filtering hidden paths is implemented in Python
             .hidden(false)
 
             // .gitignore
-            .git_ignore(true)
+            .git_ignore(git_ignore)
 
             // .git/info/exclude
-            .git_exclude(true)
+            .git_exclude(git_exclude)
 
             // global gitignore
-            .git_global(true)
+            .git_global(git_global)
 
             // .ignore
-            .ignore(true)
+            .ignore(ignore)
 
             // parent ignore files
-            .parents(true)
+            .parents(parents)
 
             // Require an actual git repository for git-related
             // ignore rules.
-            .require_git(true);
+            .require_git(require_git);
 
         let mut matchers = builder.build_matchers();
 

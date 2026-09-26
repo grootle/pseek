@@ -340,6 +340,30 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
               'By default, there is no limit on search depth.')
 @click.option('--timeout', type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
+# Automatic filtering
+# Related to git
+@click.option('--no-ignore', is_flag=True,
+              help='It disables all automatic filters related to git. '
+              'This implies include --no-git-ignore, --no-ignore-dot, '
+              '--no-ignore-exclude, --no-ignore-global, --no-ignore-parent')
+@click.option('--no-git-ignore', is_flag=True, help="Don't respect filter rules from .gitignore files.")
+@click.option('--no-ignore-dot', is_flag=True, help="Don't respect filter rules from .ignore files.")
+@click.option('--no-ignore-exclude', is_flag=True,
+              help="Don't respect filter rules from files that are manually configured for the repository. "
+              "For example, this includes git's .git/info/exclude.")
+@click.option('--no-ignore-global', is_flag=True,
+              help="Don't respect filter rules from ignore files that come from \"global\" sources such as "
+              "git's core.excludesFile configuration option (which defaults to $HOME/.config/git/ignore).")
+@click.option('--no-ignore-parent', is_flag=True,
+              help='When this flag is set, filter rules from ignore files found in parent '
+              'directories are not respected. By default, Pseek will ascend the parent directories '
+              'of the current working directory to look for any applicable ignore files that should be applied.')
+@click.option('--no-require-git', is_flag=True,
+              help='When this flag is given, source control ignore files such as '
+              '.gitignore are respected even if no git repository is present.\n\n'
+              'By default, Pseek will only respect filter rules from source control ignore files '
+              'when Pseek detects that the search is executed inside a source control repository. '
+              'For example, when a .git directory is observed.')
 # Extension filters
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Include files with these extensions. Example: --ext py --ext js')
@@ -375,7 +399,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
                    'Enter the file type in the query (e.g. unrar, bsdtar, unar, 7z).')
 # Output option
 @click.option('-a', '--absolute-path', is_flag=True, help='Display full paths for results.')
-@click.option('--paths-only', is_flag=True, help='Only show matching file paths for content search.')
+@click.option('-l', '--paths-only', is_flag=True, help='Only show matching file paths for content search.')
 @click.option('-S', '--stats', is_flag=True,
               help='Show search statistics including result counts and search time.')
 def search(**kwargs):
