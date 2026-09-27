@@ -32,9 +32,19 @@ jobs:
         id: check
         run: python scripts/check_version.py
 
-      - name: Build package
+      # Build the source distribution separately
+      - name: Build source distribution
         if: steps.check.outputs.publish == 'true'
-        run: python -m build
+        run: python -m build --sdist
+
+      # Build a PyPI-compatible Linux wheel in a manylinux container
+      - name: Build Linux wheel
+        if: steps.check.outputs.publish == 'true'
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          manylinux: "2_28"
+          args: --release --out dist --compatibility pypi
 
       - name: Publish to PyPI
         if: steps.check.outputs.publish == 'true'
