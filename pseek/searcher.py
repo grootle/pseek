@@ -1,4 +1,5 @@
 import mmap, os
+from errno import ELOOP
 from pseek import _pignore
 from pathlib import Path
 from collections import defaultdict, deque
@@ -316,8 +317,27 @@ def search_content(config, matches: dict, pattern, binary_pattern,
         )
 
 
-def walk_logic(path: Path, config, depth: int, matcher):
+def is_symlink_valid(entry):
+    if not entry.is_symlink():
+        return True
+
+    try:
+        entry.stat(follow_symlinks=True)
+    except (OSError, FileNotFoundError):
+        # To skip symlink loops and broken links
+        return False
+
+    return True
+
+
+def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
     """Recursively walk a directory while pruning excluded subtrees"""
+
+    dir_key = os.path.normcase(os.path.realpath(path))
+    if dir_key in ancestors:
+        # Prevent recursion through a directory symlink loop
+        return
+    ancestors.add(dir_key)
 
     new_depth = depth + 1
 
@@ -326,34 +346,52 @@ def walk_logic(path: Path, config, depth: int, matcher):
             for entry in entries:
                 entry_path = Path(entry.path)
 
-                # Excluded directories are pruned before recursion
+                # Prune explicitly excluded paths before further processing
                 if entry_path in config.exclude:
                     continue
 
                 try:
-                    is_dir = entry.is_dir(follow_symlinks=False)
-                except OSError:
-                    continue
+                    is_dir = entry.is_dir(follow_symlinks=config.follow)
+                except OSError as e:
+                    # If symbolic link loop is encountered,
+                    # don't continue to yield entry_path
+                    if e.errno != ELOOP:
+                        continue
+                    is_dir = False
 
-                entry_path_resolved = (entry_path.resolve() \
-                    if not config.absolute_path else entry_path).as_posix()
-
-                # Filters related to ignore rules and hidden paths
-                if matcher.is_ignored(entry_path_resolved, is_dir):
+                # Ignore rules / hidden filtering
+                absolute_entry = (
+                    Path(os.path.abspath(entry_path))
+                    if not config.absolute_path else entry_path
+                ).as_posix()
+                if matcher.is_ignored(
+                    absolute_entry,
+                    # We don't need target of symlink; symlink itself is always a file
+                    is_dir if not entry.is_symlink() else False
+                ):
                     continue
 
                 if any(mi <= new_depth <= ma for mi, ma in config.depth):
+                    # A symlink may be a valid filename-search candidate even
+                    # when its target is not followed or cannot be resolved.
                     yield entry_path
 
-                if is_dir and any(new_depth < d[1] for d in config.depth):
+                    if config.follow and entry.is_symlink() and is_symlink_valid(entry):
+                        yield entry_path.resolve()
+
+                if is_dir and is_symlink_valid(entry) and \
+                    any(new_depth < d[1] for d in config.depth):
                     yield from walk_logic(
                         entry_path,
                         config,
                         new_depth,
-                        matcher
+                        matcher,
+                        ancestors
                     )
-    except OSError:
+    except (OSError, FileNotFoundError):
         pass
+    finally:
+        ancestors.remove(dir_key)
 
 
 def walk(config):
@@ -364,9 +402,15 @@ def walk(config):
     for root in roots:
         depth = len(root.relative_to(config.path).parts) - 1
 
-        if root.is_dir() and not root.is_symlink() and any(depth < d[1] for d in config.depth):
+        if any(mi <= depth <= ma for mi, ma in config.depth):
+            # Yield symlink path and its target path if requested
+            yield root
+            if config.follow and root.is_symlink() and is_symlink_valid(root):
+                yield root.resolve()
+
+        if root.is_dir() and any(depth < d[1] for d in config.depth):
             matcher = _pignore.IgnoreMatcher(
-                root.resolve().as_posix(),
+                Path(os.path.abspath(root)).as_posix(),
                 git_ignore=not config.no_git_ignore,
                 ignore=not config.no_ignore_dot,
                 git_exclude=not config.no_ignore_exclude,
@@ -376,10 +420,7 @@ def walk(config):
                 hidden=not config.hidden
             )
 
-            yield from walk_logic(root, config, depth, matcher)
-
-        if any(mi <= depth <= ma for mi, ma in config.depth):
-            yield root
+            yield from walk_logic(root, config, depth, matcher, set())
 
 
 def seek(config, result_queue=None) -> dict:
@@ -398,7 +439,8 @@ def seek(config, result_queue=None) -> dict:
     for p in walk(config):
         try:
             p_ext = get_path_suffix(p)
-            p_size = p.stat().st_size
+            # Path.state follows symlinks, so we use lstate here
+            p_size = p.lstat().st_size
         except OSError:
             continue
         if should_skip(config, p, p_ext, p_size):
@@ -426,7 +468,9 @@ def seek(config, result_queue=None) -> dict:
                                 p_ext, metrics, result_queue)
         
         # Search for content inside files if requested
-        if config.content and p.is_file() and p_size != 0:  # Avoid empty files
+        # Avoid empty files
+        if config.content and not p.is_symlink() \
+            and p.is_file() and p_size != 0:
             search_content(config, matches, pattern, binary_pattern, p,
                            p_ext, metrics, result_queue)
 

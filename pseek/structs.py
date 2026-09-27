@@ -1,5 +1,5 @@
 from click import BadParameter
-import re
+import re, os
 from pathlib import Path
 from dataclasses import dataclass, field
 from math import isfinite
@@ -19,14 +19,17 @@ def normalize_paths(base_path: Path, paths: tuple[str], param_hint: str, absolut
 
     for path in paths:
         p = base_path / path
-        if not p.exists():
+        # Path.exists() follows symlinks, so we use os here
+        if not os.path.lexists(p):
             raise BadParameter(
                 f'Path does not exist: {p}',
                 param_hint=f'--{param_hint}',
             )
 
         if absolute_path:
-            p = p.resolve()
+            # We use absolute instead of resolve, because resolve follows symlinks.
+            # Path.absolute() has some issues prior to Python 3.11, so we use os instead.
+            p = Path(os.path.abspath(p))
 
         # Already covered by an existing parent.
         if any(p.is_relative_to(r) for r in result):
@@ -141,6 +144,7 @@ class SearchConfig:
     no_ignore_parent: bool
     no_require_git: bool
     hidden: bool
+    follow: bool
     ext: set[str]
     exclude_ext: set[str | None]
     include: set[Path]
@@ -159,14 +163,14 @@ class SearchConfig:
     absolute_path: bool
     paths_only: bool
     stats: bool
-    context: tuple[int]
+    context: tuple[int, int]
     
     def __post_init__(self):
         """Post-initialization processing to normalize and validate inputs"""
         self.path = Path(self.path)
         if self.absolute_path:
             try:
-                self.path = self.path.resolve()
+                self.path = Path(os.path.abspath(self.path))
             except OSError:
                 raise BadParameter(
                     f'Unable to resolve path: {self.path}',
@@ -213,7 +217,7 @@ class SearchConfig:
         self.context = parse_range(self.context, extract_int, 'context') if self.context else (0, 0)
 
         if self.unrestricted:
-            self.no_ignore = self.hidden = True
+            self.no_ignore = self.hidden = self.follow = True
 
         if self.no_ignore:
             self.no_git_ignore = self.no_ignore_dot = \

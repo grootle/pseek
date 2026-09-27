@@ -370,6 +370,10 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
               "Note that if a hidden file or a directory is whitelisted in an ignore file, "
               "then it will be searched even if this flag isn't provided. Similarly if "
               "a hidden file or directory is given explicitly as path argument or include option.")
+@click.option('--follow', is_flag=True,
+              help='Follow symbolic links while traversing directories. This behavior is disabled by default. '
+              'Symbolic link loops and broken links are automatically skipped. Symbolic links are given '
+              'explicitly as path argument or include option then they will be searched even if this flag is disabled.')
 # Extension filters
 @click.option('--ext', multiple=True, type=click.STRING,
               help='Include files with these extensions. Example: --ext py --ext js')
