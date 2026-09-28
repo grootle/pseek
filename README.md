@@ -635,6 +635,8 @@ psk TODO --archive
 
 Supported formats: `zip`, `rar`, `7z`, `gz`, `bz2`, `xz`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`
 
+> **Note:** [Automatic filters](#automatic-filtering) and [--glob](#globs) option don't work on archive files
+
 ### Nested Archives
 
 Pseek supports nested archives for multi-file archive containers (zip, rar, 7z, tar and compressed tar formats). Nested archive traversal means Pseek can search inside an archive that itself contains other archives (for example `a.zip` containing `b.7z` containing `c.tar.gz`).

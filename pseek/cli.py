@@ -1,4 +1,4 @@
-import click, time, shutil, rarfile, platform, sys
+import click, time, shutil, rarfile, platform
 from .searcher import seek
 from .structs import SearchConfig
 from multiprocessing import Process, Queue
@@ -263,7 +263,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
             click.secho(f"RAR backend set to: {backend} -> {tool_path}", fg="green")
         else:
             click.secho("Unknown RAR backend tool. Please provide one of: unrar, bsdtar, unar, 7z.", fg="red")
-        sys.exit(1)
+        raise click.exceptions.Exit(1)
 
     if archive_enabled:
         # Try to detect presence of RAR backends in PATH

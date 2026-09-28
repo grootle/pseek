@@ -1,4 +1,4 @@
-import re, sys, click
+import re, click
 from pathlib import Path
 
 EXTENSIONS_PATH = Path(__file__).parent / "compound_extensions"
@@ -19,7 +19,7 @@ def compile_regex(txt, flags=0) -> re.Pattern | None:
             return re.compile(txt, flags)
         except re.error as e:
             click.secho(f"Regex compile error: {e}", fg='red')
-            sys.exit(1)
+            raise click.exceptions.Exit(1)
 
 
 def get_path_suffix(path: Path | str) -> str:

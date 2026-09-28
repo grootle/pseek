@@ -123,13 +123,13 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
 
 
 def content_contains(content, binary_pattern) -> bool:
-    """Fast pre-check for presence of query in file. If query isn't present, file can be skipped"""
-    if isinstance(binary_pattern, bytes):
-        if isinstance(content, mmap.mmap):
-            return content.find(binary_pattern) != -1
-        return binary_pattern in content
-
-    return binary_pattern.search(content) is not None
+    """
+    Fast pre-check for presence of query in file.
+    If query isn't present, file can be skipped.
+    """
+    if isinstance(content, mmap.mmap):
+        return content.find(binary_pattern) != -1
+    return binary_pattern in content
 
 
 class ContextCollector:

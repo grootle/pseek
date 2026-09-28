@@ -1,4 +1,4 @@
-import re, sys, click
+import re, click
 from lark import Lark, Transformer
 from .utils import compile_regex
 from rapidfuzz import fuzz
@@ -58,27 +58,27 @@ class TermNode(ExprNode):
 
     def get_binary_pattern(self):
         """
-        Return a binary pre-filter suitable for mmap searching
+        Return a safe byte pattern for mmap pre-filtering
 
-        The returned matcher must never produce false negatives.
+        The pre-filter must never produce false negatives.
+        Only exact, case-sensitive literal searches are supported.
         It's only used as a fast pre-filter; the actual match is
         still performed on decoded text.
         """
 
-        # Binary pattern is not supported for fuzzy matching
-        # Regex with Unicode-sensitive semantics may behave differently in bytes
-        # Unicode case-insensitive matching can't safely be reproduced with a bytes pattern
-        if self.fuzzy or self.whole_word or not self.case_sensitive:
+        # Binary pattern is not supported for fuzzy matching.
+        # Regex may behave differently in bytes.
+        # Unicode case-insensitive matching can't safely
+        # be reproduced with a bytes pattern.
+        if (
+            self.fuzzy
+            or self.whole_word
+            or not self.case_sensitive
+            or self.regex
+        ):
             return None
-        
-        if not self.regex and self.case_sensitive:
-            return self.raw_term.encode("utf-8")
 
-        pattern = self.pattern.pattern.encode("utf-8")
-        # The UNICODE flag isn't supported for bytes patterns
-        flags = self.pattern.flags & ~re.UNICODE
-
-        return re.compile(pattern, flags)
+        return self.raw_term.encode('utf-8')
 
 
 class NotNode(ExprNode):
@@ -135,6 +135,8 @@ PREFIXED_STRING: /(r|c|w|f|rc|cr|cw|wc|cf|fc|wf|fw|cwf|cfw|wcf|wfc|fcw|fwc)"([^"
 %import common.WS
 %ignore WS
 """
+
+QUERY_PARSER = Lark(query_grammar, parser='lalr')
 
 
 class TreeToExpr(Transformer):
@@ -196,45 +198,160 @@ def parse_query_expression(config) -> ExprNode:
         )
 
     # Otherwise, parse using Lark
-    parser = Lark(query_grammar, parser="lalr")
     try:
-        tree = parser.parse(config.query)
+        tree = QUERY_PARSER.parse(config.query)
         return TreeToExpr(config.fuzzy_level).transform(tree)
     except Exception as e:
         click.echo(click.style("Query parser error:\n\n", fg='red') + str(e))
-        sys.exit(1)
+        raise click.exceptions.Exit(1)
+
+
+def find_term_matches(node: TermNode, text: str, num: int) -> list[tuple[int, int]]:
+    """Find matching spans for a single term"""
+
+    if node.fuzzy:
+        # Fuzzy partial matching currently has no span extraction
+        if not node.whole_word:
+            return []
+
+        text_cmp = (
+            text if node.case_sensitive
+            else text.lower()
+        )
+        term = (
+            node.raw_term if node.case_sensitive
+            else node.term_lower
+        )
+
+        matches = []
+
+        for match in re.finditer(r'\w+', text_cmp):
+            word = match.group()
+
+            if fuzz.ratio(term, word) >= node.fuzzy_level:
+                matches.append((
+                    match.start() + num,
+                    match.end() + num
+                ))
+
+        return matches
+
+    return [
+        (match.start() + num, match.end() + num)
+        for match in node.pattern.finditer(text)
+    ]
+
+
+def evaluate_with_matches(
+    node: ExprNode,
+    text: str,
+    num: int,
+    positive: bool = True
+) -> tuple[bool, list[tuple[int, int]]]:
+    """
+    Evaluate an expression and collect spans from successful positive branches
+
+    Args:
+        node: Expression tree node
+        text: Text to search
+        num: Offset added to returned match positions,
+            because when name is combined with parent path,
+            matches values change
+        positive: Whether the current expression is evaluated
+            in a positive or negated context
+
+    Returns:
+        A tuple of (matched, matching_spans).
+    """
+
+    if isinstance(node, TermNode):
+        matched = node.evaluate(text)
+
+        # A negated term can make an expression true by its
+        # absence, but it does not provide a span to highlight
+        if not positive:
+            return not matched, []
+
+        if not matched:
+            return False, []
+
+        return True, find_term_matches(node, text, num)
+
+    if isinstance(node, NotNode):
+        # NOT reverses the polarity of its child
+        return evaluate_with_matches(
+            node.child,
+            text,
+            num,
+            not positive,
+        )
+
+    if isinstance(node, (AndNode, OrNode)):
+        is_and = isinstance(node, AndNode)
+
+        # Negation reverses the operator.
+        # AND becomes OR, and OR becomes AND (De Morgan's law):
+        # NOT (A AND B) = NOT A OR NOT B
+        # NOT (A OR B)  = NOT A AND NOT B
+        # The equality checks whether the original and effective operators match.
+        effective_and = is_and == positive
+
+        left_matched, left_matches = evaluate_with_matches(
+            node.left,
+            text,
+            num,
+            positive
+        )
+
+        if effective_and:
+            # Both operands must match
+            if not left_matched:
+                return False, []
+
+            right_matched, right_matches = evaluate_with_matches(
+                node.right,
+                text,
+                num,
+                positive
+            )
+
+            if not right_matched:
+                return False, []
+
+            return True, left_matches + right_matches
+
+        # OR: evaluate both branches so that matches from
+        # every successful branch can be collected
+        right_matched, right_matches = evaluate_with_matches(
+            node.right,
+            text,
+            num,
+            positive
+        )
+
+        matched = left_matched or right_matched
+
+        if not matched:
+            return False, []
+
+        matches = []
+
+        if left_matched:
+            matches.extend(left_matches)
+
+        if right_matched:
+            matches.extend(right_matches)
+
+        return True, matches
+
+    raise TypeError(
+        f'Unsupported expression node: {type(node).__name__}'
+    )
 
 
 def find_matches(expr: ExprNode, text: str, num: int = 0) -> list[tuple[int, int]]:
-    """
-    Find all matching parts of the text.
-    Only find fuzzy matches when whole_word=True.
-    
-    num: It should be added to matches because when name is combined with parent path, matches values change.
-    """
-    matches = []
+    """Find spans that contribute to a successful expression"""
 
-    def collect_matches(node):
-        if isinstance(node, TermNode):
-            # Skip fuzzy if whole_word is False
-            if node.fuzzy:
-                if not node.whole_word:
-                    return  # skip finding
-                text_cmp = text if node.case_sensitive else text.lower()
-                term = node.raw_term if node.case_sensitive else node.raw_term.lower()
-
-                # collect word matches
-                for match in re.finditer(r'\w+', text_cmp):
-                    word = match.group()
-                    if fuzz.ratio(term, word) >= node.fuzzy_level:
-                        matches.append((match.start() + num, match.end() + num))
-            else:
-                for match in node.pattern.finditer(text):
-                    matches.append((match.start() + num, match.end() + num))
-        elif isinstance(node, (AndNode, OrNode)):
-            collect_matches(node.left)
-            collect_matches(node.right)
-
-    collect_matches(expr)
-    
-    return matches
+    matched, matches = evaluate_with_matches(expr, text, num)
+    # Remove duplicate ranges
+    return list(dict.fromkeys(matches)) if matched else []
