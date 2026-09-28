@@ -359,27 +359,38 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
                         continue
                     is_dir = False
 
-                # Ignore rules / hidden filtering
+                # Ignore rules / hidden filtering / glob logic
                 absolute_entry = (
                     Path(os.path.abspath(entry_path))
                     if not config.absolute_path else entry_path
                 ).as_posix()
-                if matcher.is_ignored(
-                    absolute_entry,
-                    # We don't need target of symlink; symlink itself is always a file
-                    is_dir if not entry.is_symlink() else False
-                ):
+                ignored, whitelisted, should_descend = (
+                    matcher.match_path(
+                        absolute_entry,
+                        # We don't need target of symlink; symlink itself is always a file
+                        is_dir if not entry.is_symlink() else False
+                    )
+                )
+
+                if ignored:
                     continue
 
                 if any(mi <= new_depth <= ma for mi, ma in config.depth):
+                    # A directory with no matching positive glob may still need
+                    # to be traversed, but should not necessarily be displayed.
+                    # This flag is used in seek func to indicate that this dir
+                    # doesn't need to be displayed, even though it must still
+                    # be included in metric calculation.
+                    metric_only = is_dir and matcher.has_positive_globs and not whitelisted
+
                     # A symlink may be a valid filename-search candidate even
                     # when its target is not followed or cannot be resolved.
-                    yield entry_path
+                    yield entry_path, metric_only
 
                     if config.follow and entry.is_symlink() and is_symlink_valid(entry):
-                        yield entry_path.resolve()
+                        yield entry_path.resolve(), False
 
-                if is_dir and is_symlink_valid(entry) and \
+                if is_dir and should_descend and is_symlink_valid(entry) and \
                     any(new_depth < d[1] for d in config.depth):
                     yield from walk_logic(
                         entry_path,
@@ -404,9 +415,9 @@ def walk(config):
 
         if any(mi <= depth <= ma for mi, ma in config.depth):
             # Yield symlink path and its target path if requested
-            yield root
+            yield root, False
             if config.follow and root.is_symlink() and is_symlink_valid(root):
-                yield root.resolve()
+                yield root.resolve(), False
 
         if root.is_dir() and any(depth < d[1] for d in config.depth):
             matcher = _pignore.IgnoreMatcher(
@@ -417,7 +428,9 @@ def walk(config):
                 git_global=not config.no_ignore_global,
                 parents=not config.no_ignore_parent,
                 require_git=not config.no_require_git,
-                hidden=not config.hidden
+                hidden=not config.hidden,
+                globs=list(config.glob) or None,
+                glob_root=config.path.as_posix()
             )
 
             yield from walk_logic(root, config, depth, matcher, set())
@@ -436,23 +449,30 @@ def seek(config, result_queue=None) -> dict:
     matches = {'file': [], 'directory': [], 'content': []}
     metrics = defaultdict(set)
 
-    for p in walk(config):
+    for p, metric_only in walk(config):
+        # Dir metrics must be added before should_skip,
+        # as it can influence these metrics
+        if config.stats and p.is_dir():
+            add_metric(metrics, result_queue, 'directories_scanned', str(p))
+
+        if metric_only:
+            continue
+
         try:
             p_ext = get_path_suffix(p)
             # Path.state follows symlinks, so we use lstate here
             p_size = p.lstat().st_size
         except OSError:
             continue
+
         if should_skip(config, p, p_ext, p_size):
             continue
 
         if config.stats:
             path_str = str(p)
 
-            if p.is_file() and (config.file or config.content):
+            if (config.file or config.content) and p.is_file():
                 add_metric(metrics, result_queue, 'files_scanned', path_str)
-            elif p.is_dir():
-                add_metric(metrics, result_queue, 'directories_scanned', path_str)
 
             if config.archive and p_ext in ARCHIVE_EXTS:
                 add_metric(

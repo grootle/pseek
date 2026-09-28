@@ -1,6 +1,69 @@
 # Pseek
 
-Fast and powerful command-line search tool for finding files, directories, and text content. 
+Fast and powerful command-line search tool for finding files, directories, and text content.
+
+## Table of Contents
+
+* [Features](#features)
+* [Installation](#installation)
+    * [Install from PyPI](#install-from-pypi-recommended)
+    * [Install from Source](#install-from-source)
+* [Basic Usage](#basic-usage)
+* [Command Options Table](#command-options)
+* [Specifying the Root Directory](#specifying-the-root-directory)
+* [Search Types](#search-types)
+    * [File Names](#search-file-names)
+    * [Directory Names](#search-directory-names)
+    * [File Contents](#search-file-contents)
+    * [All Types Simultaneously](#search-everywhere)
+* [Query Modes](#query-modes)
+    * [Case Sensitive](#case-sensitive-search)
+    * [Whole Word](#whole-word-search)
+    * [Regular Expression (Regex)](#regular-expression-search)
+    * [Fuzzy](#fuzzy-search)
+        * [Fuzzy Similarity Threshold](#fuzzy-similarity-threshold)
+* [Expression Queries](#expression-queries)
+    * [Operators](#supported-operators)
+        * [AND](#and)
+        * [OR](#or)
+        * [NOT](#not)
+        * [PARENTHESES](#parentheses)
+    * [Prefixes](#expression-prefixes)
+        * [Regex](#regex)
+        * [Case Sensitive](#case-sensitive)
+        * [Whole Word](#whole-word)
+        * [Fuzzy](#fuzzy)
+        * [Combined Prefixes](#combined-prefixes)
+* [Automatic Filtering](#automatic-filtering)
+* [Manual Filtering](#manual-filtering)
+    * [Globs](#globs)
+    * [Extension](#extension-filters)
+    * [Path](#path-filters)
+        * [Include](#include-paths)
+        * [Exclude](#exclude-paths)
+    * [Regex Path](#regex-path-filters)
+        * [Include](#include)
+        * [Exclude](#exclude)
+    * [Size](#size-filtering)
+    * [Depth](#depth)
+* [Archive Search](#archive-search)
+    * [Nested Archives](#nested-archives)
+* [Archive Filters](#archive-filters)
+    * [Depth](#archive-depth)
+    * [Extension](#extension-filters-1)
+    * [Path](#path-filters-1)
+    * [Size](#size-filter)
+* [What's RAR Backend, and How to Configure It](#rar-backend)
+* [Output Options](#output-options)
+    * [Show Full Paths](#show-full-paths)
+    * [Paths Only](#paths-only)
+    * [Context](#context)
+    * [Timeout](#timeout)
+    * [Statistics](#statistics)
+        * [Result Statistics](#result-statistics)
+        * [Search Statistics](#search-statistics)
+        * [Search time](#search-time)
+* [Requirements](#requirements)
 
 ## Features
 
@@ -113,6 +176,7 @@ psk -- --path
 | `--no-require-git` | When this flag is given, source control ignore files such as .gitignore are respected even if no git repository is present. By default, Pseek will only respect filter rules from source control ignore files when Pseek detects that the search is executed inside a source control repository. For example, when a .git directory is observed |
 | `--hidden` | Search hidden files and directories. By default, hidden files and directories are skipped. Note that if a hidden file or a directory is whitelisted in an ignore file, then it will be searched even if this flag isn't provided. Similarly if a hidden file or directory is given explicitly as path argument or include option |
 | `--follow` | Follow symbolic links while traversing directories. This behavior is disabled by default. Symbolic link loops and broken links are automatically skipped. Symbolic links are given explicitly as path argument or include option then they will be searched even if this flag is disabled |
+| `--glob` | Include or exclude files and directories for searching that match the given glob. This always overrides any other ignore logic. Multiple glob flags may be used. Globbing rules match .gitignore globs |
 | `--archive` | Enable search within archive files (e.g. `zip`, `rar`, `7z`, `gz`, `bz2`, `xz`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`) |
 | `--arc-depth` | Limit nested archive to given depth range. By default, there is no limit |
 | `--arc-ext`, `--arc-exc-ext` | Filter by file extension inside archive files |
@@ -123,7 +187,7 @@ psk -- --path
 | `--paths-only` | Only show matching file paths for content search |
 | `--stats` | Show search statistics including result counts and search time |
 
-## Specifying the root directory
+## Specifying the Root Directory
 
 To search a specific directory, path can be given as a second argument:
 
@@ -205,7 +269,7 @@ psk error\d+ --regex
 
 Example matches: `error1`, `error25`, `error999`
 
-## Fuzzy Search
+### Fuzzy Search
 
 Fuzzy search allows approximate matching.
 
@@ -217,7 +281,7 @@ psk apple --fuzzy
 
 Can match: `appl`, `appel`, `aple`
 
-### Fuzzy Similarity Threshold
+#### Fuzzy Similarity Threshold
 
 ```bash
 psk apple --fuzzy --fuzzy-level 90
@@ -333,7 +397,7 @@ Example:
 psk 'f"apple"' --expr
 ```
 
-### Combined Prefixes
+#### Combined Prefixes
 
 Prefixes can be combined.
 
@@ -363,51 +427,86 @@ Allowed modes: `r`, `c`, `w`, `f`, `rc`, `cr`, `cw`, `wc`, `cf`, `fc`, `wf`, `fw
 
 > **Note:** Whole word matching and regex matching cannot be used at the same time, because we can use `\b` in regex to enable whole word matching: `r"\btext\b"`
 
-## Context
+## Automatic Filtering
 
-Show context lines around each match. The value is specified as `BEFORE:AFTER`:
+Pseek automatically filters files and directories during recursive searches using the same ignore-matching backend and ignore-rule semantics used by [ripgrep](https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md#automatic-filtering).
 
-```bash
---context 2       # 2 lines before and after
---context 2:0     # 2 lines before, none after
---context 0:2     # none before, 2 lines after
---context 2:5     # 2 lines before, 5 lines after
---context 2:      # 2 lines before, none after
---context :2      # none before, 2 lines after
---context 0       # matching lines only
-```
+By default, Pseek will ignore all of the following:
 
-Nearby matches whose context ranges overlap or directly touch are combined into a single group.
+1. Files and directories that match glob patterns in these sources:
+    * `.gitignore` globs. This includes .gitignore files in parent directories that are part of the same git repository. (Unless the `--no-require-git` flag is given)
+    * `.git/info/exclude`
+    * Git's global ignore file configured through `core.excludesFile`
+    * `.ignore` globs, which take precedence over all gitignore globs when there's a conflict. This includes `.ignore` files in parent directories.
+    * Ignore files from parent directories, when applicable (Unless the `--no-ignore-parent` flag is given)
+2. Binary files for content search. (any file with a NUL byte to be binary)
+3. Hidden files and directories. (A file or directory is considered hidden if its base name starts with a dot character `.`)
+4. Symbolic links aren't followed
 
-## Depth
+All of these things can be toggled using various flags:
 
-Controls how deep the search goes inside directories.
+1. You can disable all git-related filtering with the `--no-ignore` flag.
+2. Hidden files and directories can be searched with the `--hidden` flag.
+3. Symbolic links can be searched with the `--follow` flag.
 
-A depth of `0` means that only base path's immediate contents are searched; subdirectories are not entered.
+For convenience, you can use the `--unrestricted` flag. This flag disables all the automatic filters mentioned above except the filter related to binary files for searching file contents.
+
+The ignore rules are interpreted using the same matching and precedence semantics as ripgrep. When ignore files at different directory levels define conflicting rules, rules from a **deeper directory take precedence over rules inherited from its parent directories**.
+
+Within the same directory level, ignore sources are applied with the following precedence, from highest to lowest:
 
 ```text
-project/                  ← base directory
-├── file.txt              ← depth 0
-├── folder1/              ← depth 0
-│   ├── file.txt          ← depth 1
-│   └── folder2/          ← depth 1
-│       └── file.txt      ← depth 2
+.ignore
+.gitignore
+.git/info/exclude
+global Git excludes (core.excludesFile)
 ```
 
-`--depth` can be specified multiple times to search non-contiguous depth ranges:
+## Manual Filtering
+
+### Globs
+
+Filter files and directories using glob patterns. The `--glob` option can be specified multiple times to include or exclude paths from the search.
+
+Pseek uses the same Git-style glob syntax and override precedence as [ripgrep](https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md#manual-filtering-globs).
+
+Use a glob without a leading `!` to include matching paths:
 
 ```bash
---depth 0              # Direct contents only
---depth 1              # One level inside
---depth 2:4            # Depths 2 through 4
---depth 2 --depth 5:7  # Depths 2 and 5 through 7
---depth :2             # Depths 0 through 2
---depth 3:             # Depth 3 and deeper
+# Search only Python files
+psk TODO --glob '*.py'
+
+# Search Python and Rust files
+psk TODO --glob '*.py' --glob '*.rs'
 ```
 
-If `--depth` is not specified, the search has no depth limit.
+Use a leading `!` to exclude matching paths:
 
-## Extension Filters
+```bash
+# Exclude Python files
+psk TODO --glob '!*.py'
+
+# Include Python files, but exclude test files
+psk TODO --glob '*.py' --glob '!*.test.py'
+```
+
+> **Note:** The `!` prefix has the opposite meaning from its use in `.gitignore` files. With `--glob`, a pattern without `!` includes matching paths, while a pattern prefixed with `!` excludes them.
+
+You can provide multiple `--glob` options. When multiple patterns match the same path, **the last matching pattern takes precedence**.
+
+```bash
+# Include Python files, exclude tests, then include a specific test file
+psk TODO \
+    --glob '*.py' \
+    --glob '!*.test.py' \
+    --glob important.test.py
+```
+
+Command-line glob patterns take precedence over Pseek's automatic ignore rules, such as supported `.gitignore`, `.ignore`, Git exclude, and global Git ignore rules.
+
+For more details about the ignore rules applied automatically, see [Automatic Filtering](#automatic-filtering).
+
+### Extension Filters
 
 Include only specific extensions:
 
@@ -421,9 +520,9 @@ Exclude extensions:
 psk TODO --exclude-ext exe --exclude-ext dll
 ```
 
-## Path Filters
+### Path Filters
 
-### Include Paths
+#### Include Paths
 
 ```bash
 psk TODO \
@@ -433,7 +532,7 @@ psk TODO \
 
 Only search inside those paths.
 
-### Exclude Paths
+#### Exclude Paths
 
 ```bash
 psk TODO \
@@ -445,23 +544,23 @@ Skip those paths.
 
 > **Note:** The include and exclude paths will be combined with path argument.
 
-## Regex Path Filters
+### Regex Path Filters
 
-### Include
+#### Include
 
 ```bash
 psk TODO \
     --re-include src/.*
 ```
 
-### Exclude
+#### Exclude
 
 ```bash
 psk TODO \
     --re-exclude "node_modules|dist"
 ```
 
-## Size Filtering
+### Size Filtering
 
 | Syntax                    | Meaning                        |
 | ------------------------- | ------------------------------ |
@@ -498,40 +597,33 @@ Files between `1 MiB` and `10 MiB` will not match.
 
 > **Note:** Directory sizes are not calculated recursively. When `--size` is used, directories are automatically excluded from the search results.
 
-## Automatic filtering
+### Depth
 
-Pseek automatically filters files and directories during recursive searches using the same ignore-matching backend and ignore-rule semantics used by [ripgrep](https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md#automatic-filtering).
+Controls how deep the search goes inside directories.
 
-By default, Pseek will ignore all of the following:
-
-1. Files and directories that match glob patterns in these sources:
-    * `.gitignore` globs. This includes .gitignore files in parent directories that are part of the same git repository. (Unless the `--no-require-git` flag is given)
-    * `.git/info/exclude`
-    * Git's global ignore file configured through `core.excludesFile`
-    * `.ignore` globs, which take precedence over all gitignore globs when there's a conflict. This includes `.ignore` files in parent directories.
-    * Ignore files from parent directories, when applicable (Unless the `--no-ignore-parent` flag is given)
-2. Binary files for content search. (any file with a NUL byte to be binary)
-3. Hidden files and directories. (A file or directory is considered hidden if its base name starts with a dot character `.`)
-4. Symbolic links aren't followed
-
-All of these things can be toggled using various flags:
-
-1. You can disable all git-related filtering with the `--no-ignore` flag.
-2. Hidden files and directories can be searched with the `--hidden` flag.
-3. Symbolic links can be searched with the `--follow` flag.
-
-For convenience, you can use the `--unrestricted` flag. This flag disables all the automatic filters mentioned above except the filter related to binary files for searching file contents.
-
-The ignore rules are interpreted using the same matching and precedence semantics as ripgrep. When ignore files at different directory levels define conflicting rules, rules from a **deeper directory take precedence over rules inherited from its parent directories**.
-
-Within the same directory level, ignore sources are applied with the following precedence, from highest to lowest:
+A depth of `0` means that only base path's immediate contents are searched; subdirectories are not entered.
 
 ```text
-.ignore
-.gitignore
-.git/info/exclude
-global Git excludes (core.excludesFile)
+project/                  ← base directory
+├── file.txt              ← depth 0
+├── folder1/              ← depth 0
+│   ├── file.txt          ← depth 1
+│   └── folder2/          ← depth 1
+│       └── file.txt      ← depth 2
 ```
+
+`--depth` can be specified multiple times to search non-contiguous depth ranges:
+
+```bash
+--depth 0              # Direct contents only
+--depth 1              # One level inside
+--depth 2:4            # Depths 2 through 4
+--depth 2 --depth 5:7  # Depths 2 and 5 through 7
+--depth :2             # Depths 0 through 2
+--depth 3:             # Depth 3 and deeper
+```
+
+If `--depth` is not specified, the search has no depth limit.
 
 ## Archive Search
 
@@ -561,6 +653,8 @@ Pseek can search:
 backup.zip::source.7z::notes.txt
 ```
 
+## Archive Filters
+
 ### Archive Depth
 
 The concept of depth in archive is different from `--depth`. Depth in archive is calculated based on nested archives. Each archive that is inside another archive counts as one level of depth.
@@ -581,8 +675,6 @@ psk TODO --archive --arc-depth :2 --arc-depth 5:
 Meaning `archive level 3` and `archive level 4` won't be searched.
 
 > **Note:** `--arc-depth 0` means perform the search only within this current archive and don't enter nested archives.
-
-## Archive Filters
 
 ### Extension Filters
 
@@ -662,7 +754,23 @@ psk TODO --content --paths-only
 
 Useful for very large result sets.
 
-## Timeout
+### Context
+
+Show context lines around each match. The value is specified as `BEFORE:AFTER`:
+
+```bash
+--context 2       # 2 lines before and after
+--context 2:0     # 2 lines before, none after
+--context 0:2     # none before, 2 lines after
+--context 2:5     # 2 lines before, 5 lines after
+--context 2:      # 2 lines before, none after
+--context :2      # none before, 2 lines after
+--context 0       # matching lines only
+```
+
+Nearby matches whose context ranges overlap or directly touch are combined into a single group.
+
+### Timeout
 
 Stop the search automatically after a specified number of seconds.
 
@@ -674,7 +782,7 @@ psk TODO --timeout 0.5
 
 If the search exceeds the limit, it will be terminated. Results found before the search is terminated are still displayed.
 
-## Search Statistics
+### Statistics
 
 Display a summary of the search, including result counts, scanned paths, archive information, and search time.
 
@@ -702,7 +810,7 @@ Search
 Search time: 0.128s
 ```
 
-### Result statistics
+#### Result Statistics
 
 * **Files matched** — Number of files whose names matched the query.
 * **Directories matched** — Number of directories whose names matched the query.
@@ -710,7 +818,7 @@ Search time: 0.128s
 * **Lines matched** — Number of lines containing one or more matches.
 * **Matches** — Total number of matches found in the contents of the files.
 
-### Search statistics
+#### Search Statistics
 
 * **Files scanned** — Number of files examined during the search.
 * **Archives scanned** — Number of archives processed, including nested archives found inside other archives.
@@ -720,7 +828,7 @@ When `--archive` is enabled, file and directory statistics can also include path
 
 `Directories scanned` can be `0` when the search path contains no subdirectories. The root search directory itself isn't counted as a scanned directory.
 
-### Search time
+#### Search time
 
 Time spent performing the search.
 

@@ -1,12 +1,14 @@
+use ignore::overrides::OverrideBuilder;
 use ignore::WalkBuilder;
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
 
 
 #[pyclass]
 struct IgnoreMatcher {
-    matcher: ignore::IncrementalIgnore
+    matcher: ignore::IncrementalIgnore,
+    has_positive_globs: bool
 }
 
 
@@ -21,7 +23,9 @@ impl IgnoreMatcher {
         ignore=true,
         parents=true,
         require_git=true,
-        hidden=true
+        hidden=true,
+        globs=None,
+        glob_root=None
     ))]
     fn new(
         root: String,
@@ -31,9 +35,16 @@ impl IgnoreMatcher {
         ignore: bool,
         parents: bool,
         require_git: bool,
-        hidden: bool
+        hidden: bool,
+        globs: Option<Vec<String>>,
+        glob_root: Option<String>,
     ) -> PyResult<Self> {
         let root = PathBuf::from(root);
+
+        // Use a separate base for glob patterns when provided
+        let glob_root = glob_root
+            .map(PathBuf::from)
+            .unwrap_or_else(|| root.clone());
 
         let mut builder = WalkBuilder::new(&root);
 
@@ -62,6 +73,32 @@ impl IgnoreMatcher {
             // ignore rules.
             .require_git(require_git);
 
+        let mut has_positive_globs = false;
+
+        // Add command-line glob overrides
+        if let Some(globs) = globs {
+            let mut overrides = OverrideBuilder::new(&glob_root);
+
+            for glob in &globs {
+                overrides.add(glob).map_err(|e| {
+                    PyValueError::new_err(format!(
+                        "Invalid glob pattern {glob:?}: {e}"
+                    ))
+                })?;
+            }
+
+            let overrides = overrides.build().map_err(|e| {
+                PyValueError::new_err(format!(
+                    "Failed to build glob matcher: {e}"
+                ))
+            })?;
+
+            // Check whether at least one positive glob was provided
+            has_positive_globs = overrides.num_whitelists() > 0;
+
+            builder.overrides(overrides);
+        }
+
         let mut matchers = builder.build_matchers();
 
         let matcher = matchers
@@ -72,15 +109,19 @@ impl IgnoreMatcher {
                 )
             })?;
 
-        Ok(Self { matcher })
+        Ok(Self { matcher, has_positive_globs })
     }
 
+    #[getter]
+    fn has_positive_globs(&self) -> bool {
+        self.has_positive_globs
+    }
 
-    fn is_ignored(
+    fn match_path(
         &mut self,
         path: String,
         is_dir: bool,
-    ) -> PyResult<bool> {
+    ) -> PyResult<(bool, bool, bool)> {
         let path = PathBuf::from(path);
 
         let relative = self
@@ -92,11 +133,13 @@ impl IgnoreMatcher {
                 )
             })?;
 
-        Ok(
-            self.matcher
-                .matched(&relative, is_dir)
-                .is_ignore()
-        )
+        let matched = self.matcher.matched(&relative, is_dir);
+
+        Ok((
+            matched.is_ignore(),
+            matched.is_whitelist(),
+            matched.should_descend()
+        ))
     }
 }
 

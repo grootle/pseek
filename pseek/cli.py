@@ -332,13 +332,15 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 @click.option('--fuzzy', is_flag=True, help='Enable fuzzy search (approximate matching). '
               'except when --expr is enabled, '
               'in which case you can make it fuzzy by putting f before term: f"foo"')
-@click.option('--fuzzy-level', type=click.IntRange(1, 99), default=80, show_default=True,
+@click.option('--fuzzy-level', metavar='INTEGER', type=click.IntRange(1, 99), default=80, show_default=True,
               help='Fuzzy matching threshold (1-99). Higher values require closer matches.')
-@click.option('-C', '--context', help='Show N context lines before and after matches, '
-              'or use N:M to specify before:after.')
-@click.option('--depth', multiple=True, help='Limit directory traversal to given depth range. '
+@click.option('-C', '--context', metavar='BEFORE:AFTER',
+              help='Show N context lines before and after matches, or use N:M to specify before:after.')
+@click.option('--depth', multiple=True, metavar='MIN:MAX',
+              help='Limit directory traversal to given depth range. '
               'By default, there is no limit on search depth.')
-@click.option('--timeout', type=click.FloatRange(min=0, min_open=True),
+@click.option('--timeout', metavar='FLOAT',
+              type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
 # Automatic filtering
 @click.option('-u', '--unrestricted', is_flag=True,
@@ -374,36 +376,41 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
               help='Follow symbolic links while traversing directories. This behavior is disabled by default. '
               'Symbolic link loops and broken links are automatically skipped. Symbolic links are given '
               'explicitly as path argument or include option then they will be searched even if this flag is disabled.')
+@click.option('-g', '--glob', metavar='GLOB', multiple=True,
+              help='Include or exclude files and directories for searching that match the given glob. '
+              'This always overrides any other ignore logic. Multiple glob flags may be used. '
+              'Globbing rules match .gitignore globs.')
 # Extension filters
-@click.option('--ext', multiple=True, type=click.STRING,
+@click.option('--ext', multiple=True, type=click.STRING, metavar='EXTENSION',
               help='Include files with these extensions. Example: --ext py --ext js')
-@click.option('-E', '--exclude-ext', multiple=True, type=click.STRING,
+@click.option('-E', '--exclude-ext', multiple=True, type=click.STRING, metavar='EXTENSION',
               help='Exclude files with these extensions. Example: --exclude-ext jpg --exclude-ext exe')
 # Include/Exclude specific paths (files or directories)
 @click.option('-i', '--include', type=click.Path(file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files to include in search.')
 @click.option('-e', '--exclude', type=click.Path(file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files to exclude from search.')
-@click.option('--re-include', type=click.STRING,
+@click.option('--re-include', type=click.STRING, metavar='REGEX',
               help='Directories or files to include in search with regex.')
-@click.option('--re-exclude', type=click.STRING,
+@click.option('--re-exclude', type=click.STRING, metavar='REGEX',
               help='Directories or files to exclude from search with regex.')
 # Size filters
-@click.option('--size', multiple=True, help='Limit results based on the size of files.')
+@click.option('--size', metavar='MIN:MAX', multiple=True, help='Limit results based on the size of files.')
 # Archive options
 @click.option('--archive', is_flag=True,
               help='Enable search within archive files (e.g. zip, rar, 7z, gz, bz2, xz, tar, tar.gz, tar.bz2, tar.xz)')
-@click.option('--arc-depth', multiple=True,
+@click.option('--arc-depth', multiple=True, metavar='MIN:MAX',
               help='Limit nested archive to given depth range. By default, there is no limit.')
-@click.option('--arc-ext', multiple=True, type=click.STRING,
+@click.option('--arc-ext', multiple=True, type=click.STRING, metavar='EXTENSION',
               help='Include files with these extensions inside archive files. Example: --arc-ext py --arc-ext js')
-@click.option('--arc-exc-ext', multiple=True, type=click.STRING,
+@click.option('--arc-exc-ext', multiple=True, type=click.STRING, metavar='EXTENSION',
               help='Exclude files with these extensions inside archive files. Example: --arc-exc-ext jpg --arc-exc-ext exe')
 @click.option('--arc-include', type=click.Path(file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files to include in search for inside archive files.')
 @click.option('--arc-exclude', type=click.Path(file_okay=True, dir_okay=True),
               multiple=True, help='Directories or files to exclude from search for inside archive files.')
-@click.option('--arc-size', multiple=True, help='Limit results based on the size of files in the archive.')
+@click.option('--arc-size', multiple=True, metavar='MIN:MAX',
+              help='Limit results based on the size of files in the archive.')
 @click.option('--rar-backend', type=click.Path(exists=True, file_okay=True, dir_okay=False),
               help='Path to RAR backend tool (e.g. UnRAR.exe, ...). '
                    'Enter the file type in the query (e.g. unrar, bsdtar, unar, 7z).')

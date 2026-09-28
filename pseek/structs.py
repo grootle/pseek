@@ -145,6 +145,7 @@ class SearchConfig:
     no_require_git: bool
     hidden: bool
     follow: bool
+    glob: tuple[str, ...]
     ext: set[str]
     exclude_ext: set[str | None]
     include: set[Path]
