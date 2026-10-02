@@ -10,6 +10,10 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    concurrency:
+      group: pseek-pypi-publish
+      cancel-in-progress: false
+
     permissions:
       contents: read
 
@@ -51,3 +55,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true

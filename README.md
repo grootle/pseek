@@ -281,6 +281,8 @@ psk apple --fuzzy
 
 Can match: `appl`, `appel`, `aple`
 
+> **Note:** To improve performance, highlighting of matches is automatically disabled if the `--fuzzy` flag is enabled and the `--word` flag is disabled.
+
 #### Fuzzy Similarity Threshold
 
 ```bash
@@ -310,6 +312,8 @@ Enable:
 ```bash
 psk '("error" or "warning") and not "debug"' --expr
 ```
+
+> **Note:** When using `--expr`, queries are double-quoted and backslashes have special meaning. Ordinary queries use JSON-style escaping, so `\n` and `\t` represent newline and tab characters, respectively. Use `\\n` or `\\t` to search for those literal sequences. Regex queries (`r"..."`) preserve regex escapes, which are interpreted by the regex engine.
 
 ### Supported Operators
 

@@ -1,4 +1,4 @@
-import re, click
+import re, click, json
 from lark import Lark, Transformer
 from .utils import compile_regex
 from rapidfuzz import fuzz
@@ -139,6 +139,19 @@ PREFIXED_STRING: /(r|c|w|f|rc|cr|cw|wc|cf|fc|wf|fw|cwf|cfw|wcf|wfc|fcw|fwc)"([^"
 QUERY_PARSER = Lark(query_grammar, parser='lalr')
 
 
+def decode_expr_string(token: str, regex: bool = False) -> str:
+    """
+    Decode a quoted expression string.
+
+    Normal strings use JSON-style escaping.
+    """
+    if not regex:
+        return json.loads(token)
+
+    # Keep regex escapes such as \b, \d, and \w intact
+    return token[1:-1]
+
+
 class TreeToExpr(Transformer):
     """Transform parsed tree into expression tree (ExprNode subclasses)"""
     def __init__(self, fuzzy_level):
@@ -147,7 +160,7 @@ class TreeToExpr(Transformer):
 
     def string(self, s):
         """ Match normal quoted string: "foo" """
-        term = s[0][1:-1]  # Remove surrounding quotes (e.g., "foo" -> foo)
+        term = decode_expr_string(str(s[0]))
         return TermNode(
             term,
             False,
@@ -158,13 +171,19 @@ class TreeToExpr(Transformer):
         )
 
     def prefixed_string(self, s):
+        """Transform a prefixed search term"""
         text = str(s[0])  # e.g., 'rc"pattern"'
-        prefix = text.split('"', 1)[0].lower()
-        content = text.split('"', 1)[1][:-1]
+
+        quote_index = text.index('"')
+        prefix = text[:quote_index].lower()
+        quoted = text[quote_index:]
+
+        is_regex = 'r' in prefix
+        content = decode_expr_string(quoted, is_regex)
 
         return TermNode(
             content,
-            regex='r' in prefix,
+            regex=is_regex,
             whole_word='w' in prefix,
             case_sensitive='c' in prefix,
             fuzzy='f' in prefix,
