@@ -146,6 +146,26 @@ To search for a query that starts with `-`, use `--` to mark the end of options:
 psk -- --path
 ```
 
+Of course the search query is optional. When no query is provided, Pseek displays the files and directories and file contents within the selected scope.
+
+All other filters still apply, including `--glob`, `--depth`, `--size`, ignore rules, and other filtering options.
+
+This makes Pseek useful as a flexible alternative to `ls` or `cat`, allowing you to inspect a filtered view of a directory tree and file contents.
+
+```bash
+# List files and directories and file contents
+psk
+
+# List only Python files
+psk --ext py
+
+# List everything up to depth 2
+psk --depth :2
+
+# List everything except the build directory
+psk --exclude build
+```
+
 ## Command Options
 
 | Option | Description |

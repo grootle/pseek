@@ -61,7 +61,7 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
         None
     )
 
-    if match_type and pattern.evaluate(p.name):
+    if match_type and (pattern is None or pattern.evaluate(p.name)):
         # Find matched query in the name
         name_matches = find_matches(
             pattern,
@@ -102,7 +102,7 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
                 None
             )
             
-            if arc_match_type and pattern.evaluate(name.name):
+            if arc_match_type and (pattern is None or pattern.evaluate(name.name)):
                 name_matches = find_matches(
                     pattern,
                     name.name,
@@ -231,7 +231,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
 
             collector = ContextCollector(config.context)
             for num, line in enumerate(decoded_content.splitlines(), 1):
-                matched = pattern.evaluate(line)
+                matched = pattern is None or pattern.evaluate(line)
 
                 if config.paths_only and matched:
                     add_result(
@@ -285,7 +285,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                 # Skip lines that can't be decoded
                 continue
 
-            matched = pattern.evaluate(line_decoded)
+            matched = pattern is None or pattern.evaluate(line_decoded)
 
             # Avoid searching through the entire file content if the paths-only flag is True
             if config.paths_only and matched:

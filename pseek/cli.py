@@ -306,7 +306,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 
 
 @click.command()
-@click.argument('query')
+@click.argument('query', required=False)
 @click.argument('path', type=click.Path(exists=True, file_okay=False, dir_okay=True),
                 default='.', required=False)
 # Search type options

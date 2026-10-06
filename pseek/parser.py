@@ -206,6 +206,9 @@ def parse_query_expression(config) -> ExprNode:
     If expr is False, treat the whole query as a single term.
     """
 
+    if config.query is None:
+        return None
+
     if not config.expr:
         return TermNode(
             config.query,
@@ -370,6 +373,9 @@ def evaluate_with_matches(
 
 def find_matches(expr: ExprNode, text: str, num: int = 0) -> list[tuple[int, int]]:
     """Find spans that contribute to a successful expression"""
+
+    if expr is None:
+        return []
 
     matched, matches = evaluate_with_matches(expr, text, num)
     # Remove duplicate ranges
