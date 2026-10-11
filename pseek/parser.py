@@ -1,7 +1,11 @@
-import re, click, json
+import json
+import re
+
+import click
 from lark import Lark, Transformer
-from .utils import compile_regex
 from rapidfuzz import fuzz
+
+from .utils import compile_regex
 
 
 class ExprNode:

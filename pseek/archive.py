@@ -1,8 +1,17 @@
+import bz2
+import gzip
 import io
-from pathlib import Path
-from .utils import get_path_suffix, is_binary
+import lzma
+import tarfile
+
 # Archive modules
-import zipfile, py7zr, tarfile, gzip, bz2, lzma, rarfile
+import zipfile
+from pathlib import Path
+
+import py7zr
+import rarfile
+
+from .utils import get_path_suffix, is_binary
 
 # Archive extensions that are allowed
 ARCHIVE_EXTS = ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'gz', 'bz2', 'xz')

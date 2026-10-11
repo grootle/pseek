@@ -1,5 +1,7 @@
-import re, click
+import re
 from pathlib import Path
+
+import click
 
 EXTENSIONS_PATH = Path(__file__).parent / "compound_extensions"
 try:

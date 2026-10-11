@@ -1,10 +1,16 @@
-import click, time, shutil, rarfile, platform
+import platform
+import shutil
+import time
+from collections import defaultdict
+from multiprocessing import Process, Queue
+from pathlib import Path
+from queue import Empty
+
+import click
+import rarfile
+
 from .searcher import seek
 from .structs import SearchConfig
-from multiprocessing import Process, Queue
-from queue import Empty
-from collections import defaultdict
-from pathlib import Path
 
 BACKEND_PATH = Path(__file__).parent / "RARBackend"
 
@@ -424,6 +430,9 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 @click.option('--timeout', metavar='FLOAT',
               type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
+@click.option('--threads', metavar='NUM', type=click.IntRange(min=0), default=0,
+              help='This flag sets the approximate number of threads to use. '
+              'A value of 0 (which is the default) causes pseek to choose the thread count using heuristics.')
 def search(**kwargs):
     """Search for files, directories, and file content based on the query."""
 

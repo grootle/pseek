@@ -1,12 +1,17 @@
-import mmap, os
-from errno import ELOOP
-from pseek import _pignore
-from pathlib import Path
+import mmap
+import os
 from collections import defaultdict, deque
-from .utils import get_path_suffix, is_binary
-from .parser import parse_query_expression, TermNode, find_matches
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from threading import RLock
+from errno import ELOOP
+from pathlib import Path
+
+from pseek import _pignore
+
 from .archive import ARCHIVE_EXTS, extract_names_from_archive, extract_text_from_archive
-from .structs import FileDirResult, ContentResult, MatchGroup, Line
+from .parser import TermNode, find_matches, parse_query_expression
+from .structs import ContentResult, FileDirResult, Line, MatchGroup
+from .utils import get_path_suffix, is_binary
 
 
 def should_skip(config, p: Path, file_ext: str, p_size: int) -> bool:
@@ -14,7 +19,7 @@ def should_skip(config, p: Path, file_ext: str, p_size: int) -> bool:
     Check whether the file/directory should be skipped based on various filters.
     Returns True if the path should be skipped.
     """
-    if (config.ext and file_ext not in config.ext) \
+    return (config.ext and file_ext not in config.ext) \
         or (config.exclude_ext and file_ext in config.exclude_ext) \
         or (config.size and (p.is_dir() or not any(  # .stat().st_size doesn't give actual size of dir.
                                                      # To measure the actual size,
@@ -22,35 +27,37 @@ def should_skip(config, p: Path, file_ext: str, p_size: int) -> bool:
                                                      # which is time-consuming
             minimum <= p_size <= maximum
             for minimum, maximum in config.size
-        ))):
-        return True
-
-    # Filter by regex include and exclude
-    str_p = str(p)
-    if config.re_include:
-        return not config.re_include.search(str_p)
-    if config.re_exclude:
-        return config.re_exclude.search(str_p) is not None
-
-    return False
+        )))
 
 
-def add_result(matches, result_queue, match_type, value):
-    if result_queue:
+def add_result(matches, result_queue, match_type, value, lock):
+    if result_queue is not None:
+        # Queue.put() is thread-safe for standard Python queues
         result_queue.put((match_type, value))
-    else:
+        return
+
+    if lock is None:
         matches[match_type].append(value)
-
-
-def add_metric(metrics, result_queue, name, value):
-    if result_queue:
-        result_queue.put(('metric', (name, value)))
     else:
+        with lock:
+            matches[match_type].append(value)
+
+
+def add_metric(metrics, result_queue, name, value, lock):
+    if result_queue is not None:
+        # Queue.put() is thread-safe for standard Python queues
+        result_queue.put(('metric', (name, value)))
+        return
+
+    if lock is None:
         metrics[name].add(value)
+    else:
+        with lock:
+            metrics[name].add(value)
 
 
 def search_file_and_dir(config, matches: dict, pattern, p: Path,
-                        p_ext: str, metrics, result_queue):
+                        p_ext: str, metrics, result_queue, result_lock):
     """Search files and folders on the system and within archive files"""
 
     path_str = str(p)
@@ -78,7 +85,8 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
             FileDirResult(
                 path=path_str,
                 matches=name_matches
-            )
+            ),
+            result_lock
         )
 
     # Search for files and directories name inside archive files if archive is active
@@ -90,14 +98,32 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
                 full_virtual_path = (path_str, *virtual_path, name_str)
                 
                 if not is_dir and config.file:
-                    add_metric(metrics, result_queue, 'files_scanned', full_virtual_path)
+                    add_metric(
+                        metrics,
+                        result_queue,
+                        'files_scanned',
+                        full_virtual_path,
+                        result_lock
+                    )
                 elif is_dir:
-                    add_metric(metrics, result_queue, 'directories_scanned', full_virtual_path)
+                    add_metric(
+                        metrics,
+                        result_queue,
+                        'directories_scanned',
+                        full_virtual_path,
+                        result_lock
+                    )
                 
                 # We cannot use "full_virtual_path[-1]" because it may be limited by --arc-depth
                 # and may not enter the archive at all to scan inside it
                 if len(full_virtual_path) >= 3 and get_path_suffix(full_virtual_path[-2]) in ARCHIVE_EXTS[:-3]:
-                    add_metric(metrics, result_queue, 'archives_scanned', full_virtual_path)
+                    add_metric(
+                        metrics,
+                        result_queue,
+                        'archives_scanned',
+                        full_virtual_path,
+                        result_lock
+                    )
 
             arc_match_type = (
                 'file' if config.file and not is_dir else
@@ -122,7 +148,8 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
                         path=path_str,
                         matches=name_matches,
                         virtual_path=[*virtual_path, name_str]
-                    )
+                    ),
+                    result_lock
                 )
 
 
@@ -202,7 +229,7 @@ class ContextCollector:
 
 
 def search_content(config, matches: dict, pattern, binary_pattern,
-                   p: Path, p_ext: str, metrics, result_queue):
+                   p: Path, p_ext: str, metrics, result_queue, result_lock):
     """Search within the contents of system files and files inside archive files"""
 
     path_str = str(p)
@@ -217,12 +244,19 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                     metrics,
                     result_queue,
                     'files_scanned',
-                    full_virtual_path if virtual_path else path_str
+                    full_virtual_path if virtual_path else path_str,
+                    result_lock
                 )
 
                 if (len(full_virtual_path) >= 3 and get_path_suffix(full_virtual_path[-2]) in ARCHIVE_EXTS[:-3] \
                     or get_path_suffix(full_virtual_path[-1]) in ARCHIVE_EXTS[-3:]):
-                    add_metric(metrics, result_queue, 'archives_scanned', full_virtual_path)
+                    add_metric(
+                        metrics,
+                        result_queue,
+                        'archives_scanned',
+                        full_virtual_path,
+                        result_lock
+                    )
 
             if binary_pattern and not content_contains(content, binary_pattern):
                 continue
@@ -245,7 +279,8 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                         ContentResult(
                             path=path_str,
                             virtual_path=virtual_path
-                        )
+                        ),
+                        result_lock
                     )
                     break
 
@@ -266,7 +301,8 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                         path=path_str,
                         virtual_path=virtual_path,
                         groups=groups
-                    )
+                    ),
+                    result_lock
                 )
 
         # Skip next block to avoid searching the contents of archive files
@@ -297,7 +333,8 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                     matches,
                     result_queue,
                     'content',
-                    ContentResult(path=path_str)
+                    ContentResult(path=path_str),
+                    result_lock
                 )
                 return
 
@@ -317,7 +354,8 @@ def search_content(config, matches: dict, pattern, binary_pattern,
             ContentResult(
                 path=path_str,
                 groups=groups
-            )
+            ),
+            result_lock
         )
 
 
@@ -352,6 +390,10 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
 
                 # Prune explicitly excluded paths before further processing
                 if entry_path in config.exclude:
+                    continue
+                # Filter by regex include and exclude
+                if (config.re_include and not config.re_include.search(entry_path.name)) \
+                    or (config.re_exclude and config.re_exclude.search(entry_path.name) is not None):
                     continue
 
                 try:
@@ -440,62 +482,137 @@ def walk(config):
             yield from walk_logic(root, config, depth, matcher, set())
 
 
+def process_candidate(item, config, pattern, binary_pattern,
+                      matches, metrics, result_queue, result_lock):
+    p, metric_only = item
+
+    # Dir metrics must be added before should_skip,
+    # as it can influence these metrics
+    if config.stats and p.is_dir():
+        add_metric(
+            metrics,
+            result_queue,
+            'directories_scanned',
+            str(p),
+            result_lock
+        )
+
+    if metric_only:
+        return
+
+    try:
+        p_ext = get_path_suffix(p)
+        # Path.state follows symlinks, so we use lstate here
+        p_size = p.lstat().st_size
+    except OSError:
+        return
+
+    if should_skip(config, p, p_ext, p_size):
+        return
+
+    if config.stats:
+        path_str = str(p)
+
+        if (config.file or config.content) and p.is_file():
+            add_metric(
+                metrics,
+                result_queue,
+                'files_scanned',
+                path_str,
+                result_lock
+            )
+
+        if config.archive and p_ext in ARCHIVE_EXTS:
+            add_metric(
+                metrics,
+                result_queue,
+                'archives_scanned',
+                (path_str,),
+                result_lock
+            )
+
+    # Search for files and directories if requested
+    if config.file or config.directory:
+        search_file_and_dir(
+            config,
+            matches,
+            pattern,
+            p,
+            p_ext,
+            metrics,
+            result_queue,
+            result_lock
+        )
+    
+    # Search for content inside files if requested
+    # Avoid empty files
+    if config.content and not p.is_symlink() \
+        and p.is_file() and p_size != 0:
+        search_content(
+            config,
+            matches,
+            pattern,
+            binary_pattern,
+            p,
+            p_ext,
+            metrics,
+            result_queue,
+            result_lock
+        )
+
+
 def seek(config, result_queue=None) -> dict:
     """Main search function"""
     pattern = parse_query_expression(config)
     # If expression is simple and is a single TermNode, we can use binary pattern
-    if config.content:
-        if isinstance(pattern, TermNode):
-            binary_pattern = pattern.get_binary_pattern()
-        else:
-            binary_pattern = None
+    binary_pattern = None
+    if config.content and isinstance(pattern, TermNode):
+        binary_pattern = pattern.get_binary_pattern()
 
-    matches = {'file': [], 'directory': [], 'content': []}
+    matches = {
+        'file': [],
+        'directory': [],
+        'content': []
+    }
     metrics = defaultdict(set)
+    result_lock = RLock()
 
-    for p, metric_only in walk(config):
-        # Dir metrics must be added before should_skip,
-        # as it can influence these metrics
-        if config.stats and p.is_dir():
-            add_metric(metrics, result_queue, 'directories_scanned', str(p))
+    workers = config.threads or (os.cpu_count() or 1)
+    max_pending = max(workers * 4, 1)
 
-        if metric_only:
-            continue
+    with ThreadPoolExecutor(
+        max_workers=workers,
+        thread_name_prefix='pseek'
+    ) as executor:
+        pending = set()
 
-        try:
-            p_ext = get_path_suffix(p)
-            # Path.state follows symlinks, so we use lstate here
-            p_size = p.lstat().st_size
-        except OSError:
-            continue
-
-        if should_skip(config, p, p_ext, p_size):
-            continue
-
-        if config.stats:
-            path_str = str(p)
-
-            if (config.file or config.content) and p.is_file():
-                add_metric(metrics, result_queue, 'files_scanned', path_str)
-
-            if config.archive and p_ext in ARCHIVE_EXTS:
-                add_metric(
+        for item in walk(config):
+            pending.add(
+                executor.submit(
+                    process_candidate,
+                    item,
+                    config,
+                    pattern,
+                    binary_pattern,
+                    matches,
                     metrics,
                     result_queue,
-                    'archives_scanned',
-                    (path_str,)
+                    result_lock
+                )
+            )
+
+            # Limit queued work to avoid excessive memory usage
+            if len(pending) >= max_pending:
+                done, pending = wait(
+                    pending,
+                    return_when=FIRST_COMPLETED
                 )
 
-        # Search for files and directories if requested
-        if config.file or config.directory:
-            search_file_and_dir(config, matches, pattern, p,
-                                p_ext, metrics, result_queue)
-        
-        # Search for content inside files if requested
-        # Avoid empty files
-        if config.content and not p.is_symlink() \
-            and p.is_file() and p_size != 0:
-            search_content(config, matches, pattern, binary_pattern, p,
-                           p_ext, metrics, result_queue)
+                for future in done:
+                    future.result()
+
+        # Propagate any errors raised by remaining workers
+        for future in pending:
+            future.result()
 
     return matches, metrics

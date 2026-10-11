@@ -1,8 +1,11 @@
-from click import BadParameter
-import re, os
-from pathlib import Path
+import os
+import re
 from dataclasses import dataclass, field
 from math import isfinite
+from pathlib import Path
+
+from click import BadParameter
+
 from .utils import compile_regex
 
 SUFFIXES = {
@@ -166,6 +169,7 @@ class SearchConfig:
     paths_only: bool
     stats: bool
     context: tuple[int, int]
+    threads: int
     
     def __post_init__(self):
         """Post-initialization processing to normalize and validate inputs"""
