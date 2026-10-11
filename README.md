@@ -22,6 +22,7 @@ Fast and powerful command-line search tool for finding files, directories, and t
     * [Regular Expression (Regex)](#regular-expression-search)
     * [Fuzzy](#fuzzy-search)
         * [Fuzzy Similarity Threshold](#fuzzy-similarity-threshold)
+    * [Full Path](#full-path)
 * [Expression Queries](#expression-queries)
     * [Operators](#supported-operators)
         * [AND](#and)
@@ -181,6 +182,7 @@ psk --exclude build
 | `--word` | Match the whole word only (except when `--expr` is enabled, in which case you can make it match whole word by putting `w` before term: `w"foo"`) |
 | `--expr` | Enable boolean query expressions. Example: `r"foo.*bar" and ("bar" or "baz") and not "qux"`. Prefixes: `r=regex`, `c=case-sensitive`, `w=whole-word`, `f=fuzzy` |
 | `--context` | Show N context lines before and after matches, or use N:M to specify before:after |
+| `--full-path` | By default, query is only matched against the filename or directory name (this applies only when searching for files or directories, not file contents). Using this flag, query is matched against the full path (and, if `--absolute-path` flag is enabled, against the absolute path) |
 | `--depth` | Limit directory traversal to given depth range. By default, there is no limit on search depth |
 | `--timeout` | Stop the search after the specified number of seconds |
 | `--fuzzy` | Enable fuzzy search (Highlighting and counting matches are disabled in this mode if `--word` is not enabled to prevent the program from slowing down). except when `--expr` is enabled, in which case you can make it fuzzy by putting `f` before term: `f"foo"` |
@@ -322,6 +324,45 @@ Examples:
 | 95    | Very strict |
 
 Default: `80`
+
+### Full Path
+
+By default, Pseek matches file and directory queries against the entry's name only. Use `--full-path` to match against its full path within the search scope instead. This option affects file and directory searches, not content searches.
+
+For example, given the relative path `pseek/utils.py`, you can match part of the path rather than just the filename:
+
+```bash
+# Match against the full relative path
+psk "seek/utils" --full-path
+```
+
+**Relative paths vs. absolute paths**
+
+`--full-path` does not automatically include the absolute path. If the file's absolute path is:
+
+```text
+/home/python/cli/pseek/utils.py
+```
+
+a query such as `python/cli` will not match unless `--absolute-path` is also enabled:
+
+```bash
+psk "python/cli" --full-path --absolute-path
+```
+
+**Nested archives**
+
+When searching nested archives, `--full-path` applies only to the path within the current archive level, not the entire nested archive chain.
+
+For example:
+
+```text
+archive.zip::folder/arc.zip::fd/file.txt
+```
+
+With `--full-path`, you can match `fd/f` against the entry `fd/file.txt` inside the innermost archive. A query such as `zip::fd` does not match across archive boundaries. Without `--full-path`, matching is limited to the entry name, `file.txt`.
+
+> **Note:** For ordinary queries without `--regex`, backslashes are treated literally, so Windows paths can be searched without additional escaping. When using `--expr`, quoted terms use JSON-style escaping; escape backslashes accordingly. For example, `"\\"` represents a single literal backslash, while `"\\n"` represents the literal sequence `\n`.
 
 ## Expression Queries
 
@@ -555,6 +596,8 @@ psk TODO \
 ```
 
 Only search inside those paths.
+
+> **Note:** Paths manually included by the user take precedence over other filters; this means that even if a path conflicts with rules related to [--glob](#globs), [--exclude](#exclude-paths), etc., it will still be included in the results.
 
 #### Exclude Paths
 

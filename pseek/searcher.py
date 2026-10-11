@@ -60,14 +60,15 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
         'directory' if config.directory and p.is_dir() else
         None
     )
+    p_name = p.name if not config.full_path else path_str
 
-    if match_type and (pattern is None or pattern.evaluate(p.name)):
+    if match_type and (pattern is None or pattern.evaluate(p_name)):
         # Find matched query in the name
         name_matches = find_matches(
             pattern,
-            p.name,
+            p_name,
             # Calculate number of chars that come before name of file or dir
-            len(path_str) - len(p.name)
+            len(path_str) - len(p_name)
         )
 
         add_result(
@@ -83,8 +84,10 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
     # Search for files and directories name inside archive files if archive is active
     if config.archive and p_ext in ARCHIVE_EXTS[:-3]:
         for virtual_path, name, is_dir in extract_names_from_archive(p, config):
+            name_str = str(name)
+
             if config.stats:
-                full_virtual_path = (path_str, *virtual_path, str(name))
+                full_virtual_path = (path_str, *virtual_path, name_str)
                 
                 if not is_dir and config.file:
                     add_metric(metrics, result_queue, 'files_scanned', full_virtual_path)
@@ -101,13 +104,14 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
                 'directory' if config.directory and is_dir else
                 None
             )
+            virtual_name = name.name if not config.full_path else name_str
             
-            if arc_match_type and (pattern is None or pattern.evaluate(name.name)):
+            if arc_match_type and (pattern is None or pattern.evaluate(virtual_name)):
                 name_matches = find_matches(
                     pattern,
-                    name.name,
+                    virtual_name,
                     # Calculate number of chars that come before name of file or dir
-                    len(str(name)) - len(name.name)
+                    len(name_str) - len(virtual_name)
                 )
 
                 add_result(
@@ -117,7 +121,7 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
                     FileDirResult(
                         path=path_str,
                         matches=name_matches,
-                        virtual_path=[*virtual_path, str(name)]
+                        virtual_path=[*virtual_path, name_str]
                     )
                 )
 

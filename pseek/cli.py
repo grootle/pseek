@@ -336,12 +336,14 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
               help='Fuzzy matching threshold (1-99). Higher values require closer matches.')
 @click.option('-C', '--context', metavar='BEFORE:AFTER',
               help='Show N context lines before and after matches, or use N:M to specify before:after.')
-@click.option('--depth', multiple=True, metavar='MIN:MAX',
+@click.option('-p', '--full-path', is_flag=True,
+              help='By default, query is only matched against the filename or directory name '
+              '(this applies only when searching for files or directories, not file contents). '
+              'Using this flag, query is matched against the full path '
+              '(and, if --absolute-path flag is enabled, against the absolute path).')
+@click.option('-D', '--depth', multiple=True, metavar='MIN:MAX',
               help='Limit directory traversal to given depth range. '
               'By default, there is no limit on search depth.')
-@click.option('--timeout', metavar='FLOAT',
-              type=click.FloatRange(min=0, min_open=True),
-              help='Stop the search after the specified number of seconds.')
 # Automatic filtering
 @click.option('-u', '--unrestricted', is_flag=True,
               help='Disable all automatic filters except the binary file filter for content search.')
@@ -419,6 +421,9 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
 @click.option('-l', '--paths-only', is_flag=True, help='Only show matching file paths for content search.')
 @click.option('-S', '--stats', is_flag=True,
               help='Show search statistics including result counts and search time.')
+@click.option('--timeout', metavar='FLOAT',
+              type=click.FloatRange(min=0, min_open=True),
+              help='Stop the search after the specified number of seconds.')
 def search(**kwargs):
     """Search for files, directories, and file content based on the query."""
 

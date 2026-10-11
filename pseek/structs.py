@@ -162,6 +162,7 @@ class SearchConfig:
     arc_size: list[tuple]
     rar_backend: str | None
     absolute_path: bool
+    full_path: bool
     paths_only: bool
     stats: bool
     context: tuple[int, int]
