@@ -47,6 +47,7 @@ Fast and powerful command-line search tool for finding files, directories, and t
         * [Exclude](#exclude)
     * [Size](#size-filtering)
     * [Depth](#depth)
+* [Parallel Search](#parallel-search)
 * [Archive Search](#archive-search)
     * [Nested Archives](#nested-archives)
 * [Archive Filters](#archive-filters)
@@ -208,6 +209,7 @@ psk --exclude build
 | `--absolute-path` | Display full path of files and directories |
 | `--paths-only` | Only show matching file paths for content search |
 | `--stats` | Show search statistics including result counts and search time |
+| `--threads` | This flag sets the approximate number of threads to use. A value of 0 (which is the default) causes pseek to choose the thread count using heuristics |
 
 ## Specifying the Root Directory
 
@@ -691,6 +693,29 @@ project/                  ← base directory
 ```
 
 If `--depth` is not specified, the search has no depth limit.
+
+## Parallel Search
+
+Pseek can process multiple file paths concurrently to improve search performance, especially when searching large numbers of files.
+
+Use `--threads` to control the maximum number of worker threads:
+
+```bash
+# Use the default number of worker threads
+psk TODO
+
+# Use 4 worker threads
+psk TODO --threads 4
+
+# Use a single worker thread
+psk TODO --threads 1
+```
+
+If `--threads` is not specified, Pseek automatically selects the number of workers based on the available CPU count. Setting `--threads 1` disables parallel processing of candidate paths.
+
+More threads do not always mean faster searches. Performance depends on factors such as file sizes, storage speed, and the type of search being performed. You can experiment with different values to find the best setting for your workload.
+
+> **Note:** Parallel processing may change the order in which results are produced. Search filters and matching rules remain unchanged.
 
 ## Archive Search
 

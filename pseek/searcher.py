@@ -2,9 +2,10 @@ import mmap
 import os
 from collections import defaultdict, deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from threading import RLock
 from errno import ELOOP
+from itertools import islice
 from pathlib import Path
+from threading import RLock
 
 from pseek import _pignore
 
@@ -451,6 +452,7 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
         ancestors.remove(dir_key)
 
 
+# TODO: Make traversal parallelize just like seek func
 def walk(config):
     """Include paths define traversal roots, avoiding unnecessary traversal 
     of unrelated parts of the tree"""
@@ -543,7 +545,7 @@ def process_candidate(item, config, pattern, binary_pattern,
             result_queue,
             result_lock
         )
-    
+
     # Search for content inside files if requested
     # Avoid empty files
     if config.content and not p.is_symlink() \
@@ -559,6 +561,26 @@ def process_candidate(item, config, pattern, binary_pattern,
             result_queue,
             result_lock
         )
+
+
+def batched(iterable, size):
+    # Convert iterable to iterator to prevent
+    # islice from creating identical batches.
+    # Example of using iterable:
+    # items = [1, 2, 3, 4, 5, 6]
+    # list(islice(items, 3)) -> [1, 2, 3]
+    # list(islice(items, 3)) -> Again [1, 2, 3]!
+    iterator = iter(iterable)
+
+    # If no elements remain, the batch becomes [],
+    # which causes while loop to terminate
+    while batch := list(islice(iterator, size)):
+        yield batch
+
+
+def process_batch(items, *args):
+    for item in items:
+        process_candidate(item, *args)
 
 
 def seek(config, result_queue=None) -> dict:
@@ -578,7 +600,6 @@ def seek(config, result_queue=None) -> dict:
     result_lock = RLock()
 
     workers = config.threads or (os.cpu_count() or 1)
-    max_pending = max(workers * 4, 1)
 
     with ThreadPoolExecutor(
         max_workers=workers,
@@ -586,11 +607,11 @@ def seek(config, result_queue=None) -> dict:
     ) as executor:
         pending = set()
 
-        for item in walk(config):
+        for batch in batched(walk(config), 16):
             pending.add(
                 executor.submit(
-                    process_candidate,
-                    item,
+                    process_batch,
+                    batch,
                     config,
                     pattern,
                     binary_pattern,
@@ -602,16 +623,18 @@ def seek(config, result_queue=None) -> dict:
             )
 
             # Limit queued work to avoid excessive memory usage
-            if len(pending) >= max_pending:
+            # Using workers as max number of pending items
+            if len(pending) >= workers:
                 done, pending = wait(
                     pending,
                     return_when=FIRST_COMPLETED
                 )
 
+                # Don't ignore exceptions. If an exception occurs, re-raise it in main thread
                 for future in done:
                     future.result()
 
-        # Propagate any errors raised by remaining workers
+        # Wait for workers that haven't finished their work yet
         for future in pending:
             future.result()
 
