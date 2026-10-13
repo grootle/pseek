@@ -1,5 +1,7 @@
 import json
 import re
+from itertools import permutations
+from pathlib import Path
 
 import click
 from lark import Lark, Transformer
@@ -16,7 +18,16 @@ class ExprNode:
 
 class TermNode(ExprNode):
     """Node representing a single search term"""
-    def __init__(self, term: str, regex, whole_word, case_sensitive, fuzzy, fuzzy_level):
+    def __init__(
+        self,
+        term: str,
+        regex: bool,
+        whole_word: bool,
+        case_sensitive: bool,
+        fuzzy: bool,
+        fuzzy_level: int | None,
+        full_path: bool
+    ):
         self.raw_term = term
         self.term_lower = term.lower()
         self.regex = regex
@@ -24,6 +35,7 @@ class TermNode(ExprNode):
         self.case_sensitive = case_sensitive
         self.fuzzy = fuzzy
         self.fuzzy_level = fuzzy_level
+        self.full_path = full_path
 
         if not fuzzy:
             flags = 0 if case_sensitive else re.IGNORECASE  # Adjust case sensitivity
@@ -37,7 +49,10 @@ class TermNode(ExprNode):
 
             self.pattern = compile_regex(term, flags)  # Precompile the regex pattern for performance
 
-    def evaluate(self, text: str) -> bool:
+    def evaluate(self, text: str | Path) -> bool:
+        if isinstance(text, Path):
+            text = text.name if not self.full_path else str(text)
+
         # Fuzzy search mode
         text_cmp = text if self.case_sensitive else text.lower()
         term = self.raw_term if self.case_sensitive else self.term_lower
@@ -114,8 +129,25 @@ class OrNode(ExprNode):
         return self.left.evaluate(text) or self.right.evaluate(text)
 
 
+def gvp() -> str:
+    """Generate all possible states and permutations of input prefixes
+
+    Returns:
+        str: prefixes=("f", "r", "rf") -> result="f|r|rf|fr"
+    """
+
+    prefixes = {'r','c','w','f','p','rp','pc','wp','fp','rc','cw',
+                'cf','wf','cwf','rcp','cwp','cfp','wfp','cwfp'}
+    valid_prefixes = set()
+
+    for p in prefixes:
+        valid_prefixes |= {''.join(pr) for pr in permutations(p)}
+
+    return '|'.join(valid_prefixes)
+
+
 # Lark grammar for parsing logical expressions
-query_grammar = r"""
+query_grammar = rf"""
 ?start: expr
 
 ?expr: or_expr
@@ -133,7 +165,7 @@ query_grammar = r"""
      | ESCAPED_STRING           -> string
      | "(" expr ")"
 
-PREFIXED_STRING: /(r|c|w|f|rc|cr|cw|wc|cf|fc|wf|fw|cwf|cfw|wcf|wfc|fcw|fwc)"([^"\\]|\\.)*"/
+PREFIXED_STRING: /({gvp()})"([^"\\]|\\.)*"/
 
 %import common.ESCAPED_STRING
 %import common.WS
@@ -171,7 +203,8 @@ class TreeToExpr(Transformer):
             False,
             False,
             False,
-            None
+            None,
+            False
         )
 
     def prefixed_string(self, s):
@@ -179,7 +212,7 @@ class TreeToExpr(Transformer):
         text = str(s[0])  # e.g., 'rc"pattern"'
 
         quote_index = text.index('"')
-        prefix = text[:quote_index].lower()
+        prefix = text[:quote_index]
         quoted = text[quote_index:]
 
         is_regex = 'r' in prefix
@@ -191,7 +224,8 @@ class TreeToExpr(Transformer):
             whole_word='w' in prefix,
             case_sensitive='c' in prefix,
             fuzzy='f' in prefix,
-            fuzzy_level=self.fuzzy_level
+            fuzzy_level=self.fuzzy_level,
+            full_path='p' in prefix
         )
 
     def and_expr(self, args):
@@ -220,7 +254,8 @@ def parse_query_expression(config) -> ExprNode:
             config.word,
             config.case_sensitive,
             config.fuzzy,
-            config.fuzzy_level
+            config.fuzzy_level,
+            config.full_path
         )
 
     # Otherwise, parse using Lark
@@ -232,8 +267,12 @@ def parse_query_expression(config) -> ExprNode:
         raise click.exceptions.Exit(1)
 
 
-def find_term_matches(node: TermNode, text: str, num: int) -> list[tuple[int, int]]:
+def find_term_matches(node: TermNode, text: str | Path, num: int) -> list[tuple[int, int]]:
     """Find matching spans for a single term"""
+    if isinstance(text, Path):
+        text = text.name if not node.full_path else str(text)
+        # Calculate number of chars that come before name of file or dir
+        num -= len(text)
 
     if node.fuzzy:
         # Fuzzy partial matching currently has no span extraction
@@ -270,7 +309,7 @@ def find_term_matches(node: TermNode, text: str, num: int) -> list[tuple[int, in
 
 def evaluate_with_matches(
     node: ExprNode,
-    text: str,
+    text: str | Path,
     num: int,
     positive: bool = True
 ) -> tuple[bool, list[tuple[int, int]]]:
@@ -370,12 +409,10 @@ def evaluate_with_matches(
 
         return True, matches
 
-    raise TypeError(
-        f'Unsupported expression node: {type(node).__name__}'
-    )
+    raise TypeError(f'Unsupported expression node: {type(node).__name__}')
 
 
-def find_matches(expr: ExprNode, text: str, num: int = 0) -> list[tuple[int, int]]:
+def find_matches(expr: ExprNode, text: str | Path, num: int = 0) -> list[tuple[int, int]]:
     """Find spans that contribute to a successful expression"""
 
     if expr is None:

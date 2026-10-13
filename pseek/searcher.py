@@ -68,15 +68,13 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
         'directory' if config.directory and p.is_dir() else
         None
     )
-    p_name = p.name if not config.full_path else path_str
 
-    if match_type and (pattern is None or pattern.evaluate(p_name)):
+    if match_type and (pattern is None or pattern.evaluate(p)):
         # Find matched query in the name
         name_matches = find_matches(
             pattern,
-            p_name,
-            # Calculate number of chars that come before name of file or dir
-            len(path_str) - len(p_name)
+            p,
+            len(path_str)
         )
 
         add_result(
@@ -131,14 +129,12 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
                 'directory' if config.directory and is_dir else
                 None
             )
-            virtual_name = name.name if not config.full_path else name_str
-            
-            if arc_match_type and (pattern is None or pattern.evaluate(virtual_name)):
+
+            if arc_match_type and (pattern is None or pattern.evaluate(name)):
                 name_matches = find_matches(
                     pattern,
-                    virtual_name,
-                    # Calculate number of chars that come before name of file or dir
-                    len(name_str) - len(virtual_name)
+                    name,
+                    len(name_str)
                 )
 
                 add_result(
@@ -452,7 +448,7 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
         ancestors.remove(dir_key)
 
 
-# TODO: Make traversal parallelize just like seek func
+# TODO: Make traversal parallel just like seek func
 def walk(config):
     """Include paths define traversal roots, avoiding unnecessary traversal 
     of unrelated parts of the tree"""

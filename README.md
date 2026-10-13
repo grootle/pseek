@@ -34,6 +34,7 @@ Fast and powerful command-line search tool for finding files, directories, and t
         * [Case Sensitive](#case-sensitive)
         * [Whole Word](#whole-word)
         * [Fuzzy](#fuzzy)
+        * [Full Path](#full-path-1)
         * [Combined Prefixes](#combined-prefixes)
 * [Automatic Filtering](#automatic-filtering)
 * [Manual Filtering](#manual-filtering)
@@ -72,17 +73,19 @@ Fast and powerful command-line search tool for finding files, directories, and t
 * Search file names
 * Search directory names
 * Search file contents
-* Search inside archive files
 * Boolean query expressions (`and`, `or`, `not`)
 * Regular expressions
 * Fuzzy matching
 * Whole-word matching
 * Case-sensitive search
+* Search inside archive files
 * Archive recursion depth control
 * Extension filters
 * Path filters
 * Size filtering
-* Full path output
+* Depth filtering
+* Automatic filtering (Supports git rules)
+* Parallel search
 * Highlight matches in output
 * Cross-platform (Linux, macOS, Windows)
 
@@ -145,7 +148,7 @@ simultaneously.
 To search for a query that starts with `-`, use `--` to mark the end of options:
 
 ```bash
-psk -- --path
+psk -- --path  # The query is "--path"
 ```
 
 Of course the search query is optional. When no query is provided, Pseek displays the files and directories and file contents within the selected scope.
@@ -261,7 +264,7 @@ Example:
 psk "hello world"
 ```
 
-> **Note:** To use case-sensitive, whole-word matching, regular expression search, and fuzzy search when `--expr` is enabled, we can use [expression prefixes](#expression-prefixes).
+> **Note:** To use case-sensitive, whole-word matching, regular expression search, fuzzy search, and full path search when `--expr` is enabled, we can use [expression prefixes](#expression-prefixes).
 
 ### Case Sensitive Search
 
@@ -288,10 +291,12 @@ Does not match: `cats`, `concatenate`
 Enable regex mode:
 
 ```bash
-psk error\d+ --regex
+psk "error\d+" --regex
 ```
 
 Example matches: `error1`, `error25`, `error999`
+
+> **Note:** Regex matching and whole word matching cannot be used at the same time, because we can use `\b` in regex to enable whole word matching: `psk "\berror\d+\b" --regex`
 
 ### Fuzzy Search
 
@@ -416,6 +421,8 @@ Used for grouping expressions.
 
 Each term can have its own search mode.
 
+> **Note:** For more detailed information about the modes, please refer to the [query modes](#query-modes) section.
+
 #### Regex
 
 ```text
@@ -464,6 +471,18 @@ Example:
 psk 'f"apple"' --expr
 ```
 
+#### Full Path
+
+```text
+p"text"
+```
+
+Example:
+
+```bash
+psk 'p"lib"' --expr
+```
+
 #### Combined Prefixes
 
 Prefixes can be combined.
@@ -474,6 +493,7 @@ Examples:
 rc"text"
 cw"text"
 cf"text"
+pc"text"
 wcf"text"
 ```
 
@@ -490,7 +510,9 @@ Meaning:
 
 simultaneously.
 
-Allowed modes: `r`, `c`, `w`, `f`, `rc`, `cr`, `cw`, `wc`, `cf`, `fc`, `wf`, `fw`, `cwf`, `cfw`, `wcf`, `wfc`, `fcw`, `fwc`
+Allowed modes: `r`, `c`, `w`, `f`, `p`, `rp`, `pc`, `wp`, `fp`, `rc`, `cw`, `cf`, `wf`, `cwf`, `rcp`, `cwp`, `cfp`, `wfp`, `cwfp`
+
+and their permutations.
 
 > **Note:** Whole word matching and regex matching cannot be used at the same time, because we can use `\b` in regex to enable whole word matching: `r"\btext\b"`
 
