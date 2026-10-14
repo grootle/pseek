@@ -24,13 +24,19 @@ def compile_regex(txt, flags=0) -> re.Pattern | None:
             raise click.exceptions.Exit(1)
 
 
-def get_path_suffix(path: Path | str) -> str:
+def get_path_suffix(path: Path | str, is_dir: bool | None = None) -> str:
     """ If multiple file suffixes are valid, return them, otherwise return only the last suffix """
     if isinstance(path, str):
         path = Path(path)
 
-    if path.is_dir():
-        return None
+    # The paths within archive aren't physical paths,
+    # so we need to determine is_dir from their metadata.
+    if is_dir is not None:
+        if is_dir:
+            return None
+    else:
+        if path.is_dir():
+            return None
 
     suffixes = ''.join(path.suffixes)[1:].lower()
 

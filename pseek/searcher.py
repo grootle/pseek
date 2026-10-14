@@ -306,41 +306,50 @@ def search_content(config, matches: dict, pattern, binary_pattern,
         return
 
     collector = ContextCollector(config.context)
-    # Memory-map the file for efficient access
-    with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-        head = mm[:8192]
-        if is_binary(head) or (binary_pattern and not content_contains(mm, binary_pattern)):
-            return
-
-        mm.seek(0)  # Move the cursor to the beginning of the file
-
-        # Iterate over each line in the file
-        for num, line in enumerate(iter(mm.readline, b''), 1):
-            try:
-                line_decoded = line.decode('utf-8').rstrip('\r\n')
-            except UnicodeDecodeError:
-                # Skip lines that can't be decoded
-                continue
-
-            matched = pattern is None or pattern.evaluate(line_decoded)
-
-            # Avoid searching through the entire file content if the paths-only flag is True
-            if config.paths_only and matched:
-                add_result(
-                    matches,
-                    result_queue,
-                    'content',
-                    ContentResult(path=path_str),
-                    result_lock
-                )
+    try:
+        # Memory-map the file for efficient access
+        with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+            head = mm[:8192]
+            if is_binary(head) or (binary_pattern and not content_contains(mm, binary_pattern)):
                 return
 
-            line_instance = Line(num, line_decoded)
+            mm.seek(0)  # Move the cursor to the beginning of the file
 
-            if matched:
-                line_instance.matches = find_matches(pattern, line_decoded)
+            # Iterate over each line in the file
+            for num, line in enumerate(iter(mm.readline, b''), 1):
+                if binary_pattern and not content_contains(line, binary_pattern):
+                    continue
 
-            collector.process(line_instance, matched)
+                try:
+                    line_decoded = line.decode('utf-8').rstrip('\r\n')
+                except UnicodeDecodeError:
+                    # Skip lines that can't be decoded
+                    continue
+
+                matched = pattern is None or pattern.evaluate(line_decoded)
+
+                # Avoid searching through the entire file content if the paths-only flag is True
+                if config.paths_only and matched:
+                    add_result(
+                        matches,
+                        result_queue,
+                        'content',
+                        ContentResult(path=path_str),
+                        result_lock
+                    )
+                    return
+
+                if not any(config.context) and not matched:
+                    continue
+
+                line_instance = Line(num, line_decoded)
+
+                if matched:
+                    line_instance.matches = find_matches(pattern, line_decoded)
+
+                collector.process(line_instance, matched)
+    except OSError:
+        return
 
     groups = collector.finish()
     if groups:

@@ -30,22 +30,16 @@ def get_archive_path_size(info, file_type: str) -> int:
 def archive_should_skip(path_info: Path, config, p_size: float, file_ext, is_dir=False):
     """Check whether the file/directory inside archive files should be skipped based on various filters"""
 
-    if (config.arc_include and not any(path_info.is_relative_to(inc) for inc in config.arc_include)) \
+    path_info_str = str(path_info)
+    return (config.arc_include and not any(path_info.is_relative_to(inc) for inc in config.arc_include)) \
             or (config.arc_exclude and any(path_info.is_relative_to(exc) for exc in config.arc_exclude)) \
             or (config.arc_ext and file_ext not in config.arc_ext) \
             or (config.arc_exc_ext and file_ext in config.arc_exc_ext) \
             or (config.arc_size and (is_dir or not any(
                 minimum <= p_size <= maximum
                 for minimum, maximum in config.arc_size
-            ))):
-        return True
-
-    if config.re_include:
-        return not config.re_include.search(str(path_info))
-    if config.re_exclude:
-        return config.re_exclude.search(str(path_info)) is not None
-
-    return False
+            ))) or (config.re_include and not config.re_include.search(path_info_str)) \
+        or (config.re_exclude and config.re_exclude.search(path_info_str) is not None)
 
 
 def extract_names_from_archive(file_path: Path, config, depth: int = -1,
@@ -78,8 +72,8 @@ def extract_names_from_archive(file_path: Path, config, depth: int = -1,
             with opener(file_stream) as f:
                 for info in f.infolist():
                     name = Path(info.filename)
-                    new_path_ext = get_path_suffix(name)
                     is_dir = info.is_dir()
+                    new_path_ext = get_path_suffix(name, is_dir)
 
                     if not archive_should_skip(
                             name,
@@ -105,8 +99,8 @@ def extract_names_from_archive(file_path: Path, config, depth: int = -1,
             with py7zr.SevenZipFile(file_stream, mode='r') as z:
                 for info in z.list():
                     name = Path(info.filename)
-                    new_path_ext = get_path_suffix(name)
                     is_dir = info.is_directory
+                    new_path_ext = get_path_suffix(name, is_dir)
 
                     if not archive_should_skip(
                             name,
@@ -143,8 +137,8 @@ def extract_names_from_archive(file_path: Path, config, depth: int = -1,
             with tarfile.open(fileobj=file_stream, mode=mode) as tf:
                 for member in tf.getmembers():
                     name = Path(member.name)
-                    new_path_ext = get_path_suffix(name)
                     is_dir = member.isdir()
+                    new_path_ext = get_path_suffix(name, is_dir)
 
                     if not archive_should_skip(
                             name,
@@ -203,10 +197,10 @@ def extract_text_from_archive(file_path: Path, config, depth: int = -1,
                 for info in f.infolist():
                     if info.is_dir():
                         continue
-                    
+
                     file_name = Path(info.filename)
                     new_path_ext = get_path_suffix(file_name)
-                    
+
                     if archive_should_skip(
                         file_name,
                         config,
@@ -243,7 +237,7 @@ def extract_text_from_archive(file_path: Path, config, depth: int = -1,
 
                     file_name = Path(info.filename)
                     new_path_ext = get_path_suffix(file_name)
-                    
+
                     if archive_should_skip(
                         file_name,
                         config,
@@ -282,7 +276,7 @@ def extract_text_from_archive(file_path: Path, config, depth: int = -1,
 
                     file_name = Path(member.name)
                     new_path_ext = get_path_suffix(file_name)
-                    
+
                     if archive_should_skip(
                         file_name,
                         config,
