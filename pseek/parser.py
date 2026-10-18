@@ -26,7 +26,8 @@ class TermNode(ExprNode):
         case_sensitive: bool,
         fuzzy: bool,
         fuzzy_level: int | None,
-        full_path: bool
+        full_path: bool,
+        whole_line: bool
     ):
         self.raw_term = term
         self.term_lower = term.lower()
@@ -36,6 +37,7 @@ class TermNode(ExprNode):
         self.fuzzy = fuzzy
         self.fuzzy_level = fuzzy_level
         self.full_path = full_path
+        self.whole_line = whole_line
 
         if not fuzzy:
             flags = 0 if case_sensitive else re.IGNORECASE  # Adjust case sensitivity
@@ -44,7 +46,7 @@ class TermNode(ExprNode):
             if not regex:
                 term = re.escape(term)  # Escape if not regex
                 # Apply whole-word matching only if not using regex (or if desired behavior is defined)
-                if whole_word:
+                if whole_word and not whole_line:
                     term = r'\b' + term + r'\b'
 
             self.pattern = compile_regex(term, flags)  # Precompile the regex pattern for performance
@@ -60,20 +62,29 @@ class TermNode(ExprNode):
         if not self.fuzzy:
             # Use substring search for more speed
             if not self.regex and not self.whole_word:
+                if self.whole_line:
+                    return term == text_cmp
                 return term in text_cmp
 
-            return bool(self.pattern.search(text))
+            return bool(self.pattern.search(text)) \
+                if not self.whole_line \
+                else bool(self.pattern.fullmatch(text))
+
+        if self.whole_line:
+            score = fuzz.ratio(term, text_cmp)
+            return score >= self.fuzzy_level
 
         if self.whole_word:
             words = re.findall(r'\w+', text_cmp)
             return any(fuzz.ratio(term, word) >= self.fuzzy_level for word in words)
+
+        # Use the correct method depending on the len of str to increase accuracy and avoid illogical matching
+        if len(text_cmp) > len(term):
+            score = fuzz.partial_ratio(term, text_cmp)
         else:
-            # Use the correct method depending on the len of str to increase accuracy and avoid illogical matching
-            if len(text_cmp) > len(term):
-                score = fuzz.partial_ratio(term, text_cmp)
-            else:
-                score = fuzz.ratio(term, text_cmp)
-            return score >= self.fuzzy_level
+            score = fuzz.ratio(term, text_cmp)
+
+        return score >= self.fuzzy_level
 
     def get_binary_pattern(self):
         """
@@ -129,25 +140,8 @@ class OrNode(ExprNode):
         return self.left.evaluate(text) or self.right.evaluate(text)
 
 
-def gvp() -> str:
-    """Generate all possible states and permutations of input prefixes
-
-    Returns:
-        str: prefixes=("f", "r", "rf") -> result="f|r|rf|fr"
-    """
-
-    prefixes = {'r','c','w','f','p','rp','pc','wp','fp','rc','cw',
-                'cf','wf','cwf','rcp','cwp','cfp','wfp','cwfp'}
-    valid_prefixes = set()
-
-    for p in prefixes:
-        valid_prefixes |= {''.join(pr) for pr in permutations(p)}
-
-    return '|'.join(valid_prefixes)
-
-
 # Lark grammar for parsing logical expressions
-query_grammar = rf"""
+query_grammar = r"""
 ?start: expr
 
 ?expr: or_expr
@@ -165,7 +159,7 @@ query_grammar = rf"""
      | ESCAPED_STRING           -> string
      | "(" expr ")"
 
-PREFIXED_STRING: /({gvp()})"([^"\\]|\\.)*"/
+PREFIXED_STRING: /[rcwfpl]+"([^"\\]|\\.)*"/
 
 %import common.ESCAPED_STRING
 %import common.WS
@@ -204,6 +198,7 @@ class TreeToExpr(Transformer):
             False,
             False,
             None,
+            False,
             False
         )
 
@@ -213,6 +208,14 @@ class TreeToExpr(Transformer):
 
         quote_index = text.index('"')
         prefix = text[:quote_index]
+
+        if len(prefix) != len(set(prefix)):
+            raise ValueError(f'Duplicate prefix flag: {prefix}')
+        if 'r' in prefix and 'f' in prefix:
+            raise ValueError('Regex and fuzzy prefixes cannot be combined.')
+        if 'r' in prefix and 'w' in prefix:
+            raise ValueError('Regex and whole-word prefixes cannot be combined. To use whole-word matching in regex, use \\b: r"\\btext\\b"')
+
         quoted = text[quote_index:]
 
         is_regex = 'r' in prefix
@@ -225,7 +228,8 @@ class TreeToExpr(Transformer):
             case_sensitive='c' in prefix,
             fuzzy='f' in prefix,
             fuzzy_level=self.fuzzy_level,
-            full_path='p' in prefix
+            full_path='p' in prefix,
+            whole_line='l' in prefix
         )
 
     def and_expr(self, args):
@@ -238,7 +242,7 @@ class TreeToExpr(Transformer):
         return NotNode(args[0])
 
 
-def parse_query_expression(config) -> ExprNode:
+def parse_query_expression(config) -> ExprNode | None:
     """
     Function to parse the query and return expression tree.
     If expr is False, treat the whole query as a single term.
@@ -255,7 +259,8 @@ def parse_query_expression(config) -> ExprNode:
             config.case_sensitive,
             config.fuzzy,
             config.fuzzy_level,
-            config.full_path
+            config.full_path,
+            config.line
         )
 
     # Otherwise, parse using Lark
@@ -276,7 +281,7 @@ def find_term_matches(node: TermNode, text: str | Path, num: int) -> list[tuple[
 
     if node.fuzzy:
         # Fuzzy partial matching currently has no span extraction
-        if not node.whole_word:
+        if not node.whole_word and not node.whole_line:
             return []
 
         text_cmp = (
@@ -287,6 +292,11 @@ def find_term_matches(node: TermNode, text: str | Path, num: int) -> list[tuple[
             node.raw_term if node.case_sensitive
             else node.term_lower
         )
+
+        if node.whole_line:
+            if fuzz.ratio(term, text_cmp) >= node.fuzzy_level:
+                return [(num, len(text) + num)]
+            return []
 
         matches = []
 
@@ -300,6 +310,9 @@ def find_term_matches(node: TermNode, text: str | Path, num: int) -> list[tuple[
                 ))
 
         return matches
+
+    if node.whole_line and node.pattern.fullmatch(text) is not None:
+        return [(num, len(text) + num)]
 
     return [
         (match.start() + num, match.end() + num)

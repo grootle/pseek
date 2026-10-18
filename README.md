@@ -23,6 +23,7 @@ Fast and powerful command-line search tool for finding files, directories, and t
     * [Fuzzy](#fuzzy-search)
         * [Fuzzy Similarity Threshold](#fuzzy-similarity-threshold)
     * [Full Path](#full-path)
+    * [Line](#line)
 * [Expression Queries](#expression-queries)
     * [Operators](#supported-operators)
         * [AND](#and)
@@ -35,6 +36,7 @@ Fast and powerful command-line search tool for finding files, directories, and t
         * [Whole Word](#whole-word)
         * [Fuzzy](#fuzzy)
         * [Full Path](#full-path-1)
+        * [Line](#line-1)
         * [Combined Prefixes](#combined-prefixes)
 * [Automatic Filtering](#automatic-filtering)
 * [Manual Filtering](#manual-filtering)
@@ -187,6 +189,7 @@ psk --exclude build
 | `--expr` | Enable boolean query expressions. Example: `r"foo.*bar" and ("bar" or "baz") and not "qux"`. Prefixes: `r=regex`, `c=case-sensitive`, `w=whole-word`, `f=fuzzy` |
 | `--context` | Show N context lines before and after matches, or use N:M to specify before:after |
 | `--full-path` | By default, query is only matched against the filename or directory name (this applies only when searching for files or directories, not file contents). Using this flag, query is matched against the full path (and, if `--absolute-path` flag is enabled, against the absolute path) |
+| `--line` | Match lines where the entire line participates in a match |
 | `--depth` | Limit directory traversal to given depth range. By default, there is no limit on search depth |
 | `--timeout` | Stop the search after the specified number of seconds |
 | `--fuzzy` | Enable fuzzy search (Highlighting and counting matches are disabled in this mode if `--word` is not enabled to prevent the program from slowing down). except when `--expr` is enabled, in which case you can make it fuzzy by putting `f` before term: `f"foo"` |
@@ -371,6 +374,39 @@ With `--full-path`, you can match `fd/f` against the entry `fd/file.txt` inside 
 
 > **Note:** For ordinary queries without `--regex`, backslashes are treated literally, so Windows paths can be searched without additional escaping. When using `--expr`, quoted terms use JSON-style escaping; escape backslashes accordingly. For example, `"\\"` represents a single literal backslash, while `"\\n"` represents the literal sequence `\n`.
 
+### Line
+
+Match the entire line or selected path instead of matching a pattern anywhere within it.
+
+```bash
+# Match lines exactly equal to "TODO"
+psk TODO --line
+
+# Match only lines containing exactly "foo" or "bar"
+psk 'foo|bar' --regex --line
+
+# Match files whose names are exactly "cli.py"
+psk "cli.py" --file --line
+```
+
+> **Note:** If both options are specified, `--line` takes precedence over `--word`. In this case, instead of checking individual word boundaries, the entire line or selected path is matched.
+
+By default, Pseek matches a file's or directory's **name**. Use `--full-path` to match against its full path instead.
+
+```bash
+# Match files named "cli.py"
+psk "cli.py" --file --line
+
+# Match the full relative path "pseek/cli.py"
+psk "pseek/cli.py" --file --full-path --line
+
+# Match the full absolute path
+psk "/home/python/cli/pseek/utils.py" \
+    --file --full-path --absolute-path --line
+```
+
+> **Note:** Leading and trailing whitespace is significant. `--line` does not trim the target before matching. Use an appropriate regular expression, such as `\s*TODO\s*` with `--line`, if surrounding whitespace should be ignored.
+
 ## Expression Queries
 
 Expression mode enables logical search expressions.
@@ -425,9 +461,7 @@ Each term can have its own search mode.
 
 #### Regex
 
-```text
-r"pattern"
-```
+Usage: `r"pattern"`
 
 Example:
 
@@ -437,9 +471,7 @@ psk 'r"error\d+"' --expr
 
 #### Case Sensitive
 
-```text
-c"text"
-```
+Usage: `c"text"`
 
 Example:
 
@@ -449,9 +481,7 @@ psk 'c"Error"' --expr
 
 #### Whole Word
 
-```text
-w"text"
-```
+Usage: `w"text"`
 
 Example:
 
@@ -461,9 +491,7 @@ psk 'w"cat"' --expr
 
 #### Fuzzy
 
-```text
-f"text"
-```
+Usage: `f"text"`
 
 Example:
 
@@ -473,14 +501,22 @@ psk 'f"apple"' --expr
 
 #### Full Path
 
-```text
-p"text"
-```
+Usage: `p"text"`
 
 Example:
 
 ```bash
 psk 'p"lib"' --expr
+```
+
+#### Line
+
+Usage: `l"text"`
+
+Example:
+
+```bash
+psk 'l"foo"' --expr
 ```
 
 #### Combined Prefixes
@@ -510,9 +546,7 @@ Meaning:
 
 simultaneously.
 
-Allowed modes: `r`, `c`, `w`, `f`, `p`, `rp`, `pc`, `wp`, `fp`, `rc`, `cw`, `cf`, `wf`, `cwf`, `rcp`, `cwp`, `cfp`, `wfp`, `cwfp`
-
-and their permutations.
+All modes are permitted, except for those where regex and word, or regex and fuzzy, are used simultaneously.
 
 > **Note:** Whole word matching and regex matching cannot be used at the same time, because we can use `\b` in regex to enable whole word matching: `r"\btext\b"`
 

@@ -133,6 +133,7 @@ class SearchConfig:
     case_sensitive: bool
     regex: bool
     word: bool
+    line: bool
     expr: bool
     depth: list[tuple]
     timeout: int | None

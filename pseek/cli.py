@@ -347,6 +347,8 @@ def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
               '(this applies only when searching for files or directories, not file contents). '
               'Using this flag, query is matched against the full path '
               '(and, if --absolute-path flag is enabled, against the absolute path).')
+@click.option('--line', is_flag=True,
+              help='Match lines where the entire line participates in a match.')
 @click.option('-D', '--depth', multiple=True, metavar='MIN:MAX',
               help='Limit directory traversal to given depth range. '
               'By default, there is no limit on search depth.')
@@ -440,10 +442,10 @@ def search(**kwargs):
 
     check_rar_backend(config.archive, config.rar_backend, config.query)
 
-    if not config.expr and config.fuzzy:
+    if not config.expr and config.fuzzy and not config.line:
         if not config.word:
             click.secho(
-                "Warning: Fuzzy substring highlighting and counting matches are disabled to improve performance.",
+                "Warning: To improve performance, highlighting of matches is disabled.",
                 fg="yellow"
             )
         elif config.word and " " in config.query:
