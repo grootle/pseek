@@ -7,6 +7,8 @@ from itertools import islice
 from pathlib import Path
 from threading import RLock
 
+import click
+
 from pseek import _pignore
 
 from .archive import ARCHIVE_EXTS, extract_names_from_archive, extract_text_from_archive
@@ -378,6 +380,20 @@ def is_symlink_valid(entry):
     return True
 
 
+def needs_ignore_matcher(config) -> bool:
+    # In cases where all paths must be searched and
+    # there are no filtering rules,
+    # there is no need to create matcher.
+    return (
+        not config.hidden
+        or not config.no_git_ignore
+        or not config.no_ignore_dot
+        or not config.no_ignore_exclude
+        or not config.no_ignore_global
+        or bool(config.glob)
+    )
+
+
 def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
     """Recursively walk a directory while pruning excluded subtrees"""
 
@@ -411,18 +427,27 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
                         continue
                     is_dir = False
 
-                # Ignore rules / hidden filtering / glob logic
-                absolute_entry = (
-                    Path(os.path.abspath(entry_path))
-                    if not config.absolute_path else entry_path
-                ).as_posix()
-                ignored, whitelisted, should_descend = (
-                    matcher.match_path(
-                        absolute_entry,
-                        # We don't need target of symlink; symlink itself is always a file
-                        is_dir if not entry.is_symlink() else False
-                    )
-                )
+                if matcher is None:
+                    ignored = False
+                    whitelisted = False
+                    should_descend = is_dir
+                else:
+                    # Ignore rules / hidden filtering / glob logic
+
+                    absolute_entry = (
+                        Path(os.path.abspath(entry_path))
+                        if not config.absolute_path
+                        else entry_path
+                    ).as_posix()
+
+                    try:
+                        ignored, whitelisted, should_descend = matcher.match_path(
+                            absolute_entry,
+                            # We don't need target of symlink; symlink itself is always a file
+                            is_dir if not entry.is_symlink() else False,
+                        )
+                    except RuntimeError:
+                        continue
 
                 if ignored:
                     continue
@@ -433,7 +458,12 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
                     # This flag is used in seek func to indicate that this dir
                     # doesn't need to be displayed, even though it must still
                     # be included in metric calculation.
-                    metric_only = is_dir and matcher.has_positive_globs and not whitelisted
+                    metric_only = (
+                        is_dir
+                        and matcher is not None
+                        and matcher.has_positive_globs
+                        and not whitelisted
+                    )
 
                     # A symlink may be a valid filename-search candidate even
                     # when its target is not followed or cannot be resolved.
@@ -462,6 +492,7 @@ def walk(config):
     """Include paths define traversal roots, avoiding unnecessary traversal 
     of unrelated parts of the tree"""
     roots = config.include or {config.path}
+    needs_matcher = needs_ignore_matcher(config)
 
     for root in roots:
         depth = len(root.relative_to(config.path).parts) - 1
@@ -473,18 +504,27 @@ def walk(config):
                 yield root.resolve(), False
 
         if root.is_dir() and any(depth < d[1] for d in config.depth):
-            matcher = _pignore.IgnoreMatcher(
-                Path(os.path.abspath(root)).as_posix(),
-                git_ignore=not config.no_git_ignore,
-                ignore=not config.no_ignore_dot,
-                git_exclude=not config.no_ignore_exclude,
-                git_global=not config.no_ignore_global,
-                parents=not config.no_ignore_parent,
-                require_git=not config.no_require_git,
-                hidden=not config.hidden,
-                globs=list(config.glob) or None,
-                glob_root=config.path.as_posix()
-            )
+            matcher = None
+
+            if needs_matcher:
+                try:
+                    matcher = _pignore.IgnoreMatcher(
+                        Path(os.path.abspath(root)).as_posix(),
+                        git_ignore=not config.no_git_ignore,
+                        ignore=not config.no_ignore_dot,
+                        git_exclude=not config.no_ignore_exclude,
+                        git_global=not config.no_ignore_global,
+                        parents=not config.no_ignore_parent,
+                        require_git=not config.no_require_git,
+                        hidden=not config.hidden,
+                        globs=list(config.glob) or None,
+                        glob_root=config.path.as_posix()
+                    )
+                except ValueError as e:
+                    raise click.BadParameter(e, param_hint='--glob')
+                except RuntimeError as e:
+                    click.secho(e, fg='red')
+                    raise click.exceptions.Exit(1)
 
             yield from walk_logic(root, config, depth, matcher, set())
 

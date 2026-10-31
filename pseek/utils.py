@@ -24,7 +24,7 @@ def compile_regex(txt, flags=0) -> re.Pattern | None:
             raise click.exceptions.Exit(1)
 
 
-def get_path_suffix(path: Path | str, is_dir: bool | None = None) -> str:
+def get_path_suffix(path: Path | str, is_dir: bool | None = None) -> str | None:
     """ If multiple file suffixes are valid, return them, otherwise return only the last suffix """
     if isinstance(path, str):
         path = Path(path)

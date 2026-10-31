@@ -49,7 +49,7 @@ def build_highlight(text, matches):
     return ''.join(parts)
 
 
-def echo(results: dict, context: bool):
+def echo(results: dict, context: tuple[int, int]):
     """Display results with a specific format and color scheme"""
     for match_type, datas in results.items():
         if datas:
@@ -258,7 +258,7 @@ def search_with_timeout(config):
         time.sleep(0.0005)
 
 
-def check_rar_backend(archive_enabled: bool, tool_path: str, backend: str):
+def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str):
     """Check for the existence of rar backend or save and set it for rarfile"""
 
     # Save backend path for later executions

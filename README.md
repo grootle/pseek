@@ -245,6 +245,8 @@ psk backup --directory
 psk TODO --content
 ```
 
+> **Note:** When searching through file contents, binary files are automatically ignored, and this behavior cannot be changed. If null bytes are present within the first 8 KiB of a file, it is identified as a binary file (The entire file is not examined, in order to increase speed).
+
 ### Search Everywhere
 
 ```bash
@@ -729,12 +731,12 @@ Controls how deep the search goes inside directories.
 A depth of `0` means that only base path's immediate contents are searched; subdirectories are not entered.
 
 ```text
-project/                  ← base directory
-├── file.txt              ← depth 0
-├── folder1/              ← depth 0
-│   ├── file.txt          ← depth 1
-│   └── folder2/          ← depth 1
-│       └── file.txt      ← depth 2
+project/                  <- base directory
+├── file.txt              <- depth 0
+├── folder1/              <- depth 0
+│   ├── file.txt          <- depth 1
+│   └── folder2/          <- depth 1
+│       └── file.txt      <- depth 2
 ```
 
 `--depth` can be specified multiple times to search non-contiguous depth ranges:
@@ -937,7 +939,7 @@ If the search exceeds the limit, it will be terminated. Results found before the
 Display a summary of the search, including result counts, scanned paths, archive information, and search time.
 
 ```bash
-pseek config --stats
+pseek config --archive --stats
 ```
 
 Example output:
@@ -946,7 +948,7 @@ Example output:
 Statistics
 ────────────────
 Results
-  Files: 12
+  Files matched: 12
   Directories matched: 3
   Files with matched content: 8
   Lines matched: 24
