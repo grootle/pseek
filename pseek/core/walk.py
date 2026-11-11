@@ -1,4 +1,5 @@
 import os
+import stat
 from errno import ELOOP
 from pathlib import Path
 
@@ -6,9 +7,11 @@ import click
 
 from pseek import _pignore
 
+from ..structs import SysPath
 
-def is_symlink_valid(entry):
-    if not entry.is_symlink():
+
+def is_symlink_valid(entry, is_symlink):
+    if not is_symlink:
         return True
 
     try:
@@ -67,6 +70,8 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
                         continue
                     is_dir = False
 
+                is_symlink = entry.is_symlink()
+
                 if matcher is None:
                     ignored = False
                     whitelisted = False
@@ -83,8 +88,9 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
                     try:
                         ignored, whitelisted, should_descend = matcher.match_path(
                             absolute_entry,
-                            # We don't need target of symlink; symlink itself is always a file
-                            is_dir if not entry.is_symlink() else False,
+                            # We don't need target of symlink;
+                            # symlink itself is always considered a file.
+                            is_dir if not is_symlink else False,
                         )
                     except RuntimeError:
                         continue
@@ -107,12 +113,31 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
 
                     # A symlink may be a valid filename-search candidate even
                     # when its target is not followed or cannot be resolved.
-                    yield entry_path, metric_only
+                    yield (
+                        SysPath(
+                            path=entry_path,
+                            is_file=entry.is_file(follow_symlinks=False) \
+                                if not is_symlink else True,
+                            is_dir=is_dir if not is_symlink else False,
+                            is_symlink=is_symlink,
+                        ),
+                        metric_only
+                    )
 
-                    if config.follow and entry.is_symlink() and is_symlink_valid(entry):
-                        yield entry_path.resolve(), False
+                    if config.follow and is_symlink and is_symlink_valid(entry, is_symlink):
+                        yield (
+                            SysPath(
+                                # Follow and get the symlink target path
+                                path=entry_path.resolve(),
+                                is_file=entry.is_file(follow_symlinks=True),
+                                is_dir=is_dir,
+                                # Target of a symlink isn't a symlink
+                                is_symlink=False,
+                            ),
+                            False
+                        )
 
-                if is_dir and should_descend and is_symlink_valid(entry) and \
+                if is_dir and should_descend and is_symlink_valid(entry, is_symlink) and \
                     any(new_depth < d[1] for d in config.depth):
                     yield from walk_logic(
                         entry_path,
@@ -139,9 +164,37 @@ def walk(config):
 
         if any(mi <= depth <= ma for mi, ma in config.depth):
             # Yield symlink path and its target path if requested
-            yield root, False
-            if config.follow and root.is_symlink() and is_symlink_valid(root):
-                yield root.resolve(), False
+            is_symlink = root.is_symlink()
+
+            st = root.lstat()
+
+            # Get is_dir and is_file without following the symlink
+            is_dir = stat.S_ISDIR(st.st_mode)
+            is_file = stat.S_ISREG(st.st_mode)
+
+            yield (
+                SysPath(
+                    path=root,
+                    is_file=is_file if not is_symlink else True,
+                    is_dir=is_dir if not is_symlink else False,
+                    is_symlink=is_symlink,
+                    lstat_result=st
+                ),
+                False
+            )
+
+            if config.follow and is_symlink and is_symlink_valid(root, is_symlink):
+                yield (
+                    SysPath(
+                        path=root.resolve(),
+                        # Path.is_file() and Path.is_dir() follow symlinks by default
+                        is_file=root.is_file(),
+                        is_dir=root.is_dir(),
+                        # Target of a symlink isn't a symlink
+                        is_symlink=False,
+                    ),
+                    False
+                )
 
         if root.is_dir() and any(depth < d[1] for d in config.depth):
             matcher = None

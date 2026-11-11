@@ -42,14 +42,14 @@ def archive_should_skip(path_info: Path, config, p_size: float, file_ext, is_dir
         or (config.re_exclude and config.re_exclude.search(path_info_str) is not None)
 
 
-def extract_names_from_archive(file_path: Path, config, depth: int = -1,
+def extract_names_from_archive(file_path, config, depth: int = -1,
                                file_bytes: bytes | None = None, parent_label: list[str] | None = None):
     """
     Recursively extract files and directories name from archive files.
     Supports nested archives like a.zip::b.7z::c.txt.
 
     Parameters:
-        file_path (Path): the archive file path
+        file_path (SysPath): the archive file path
         depth (int): the depth value that is returned recursively
         file_bytes (bytes | None): optional byte data if already read (for recursion)
         parent_label (list): list for nested archive tracking like ["a.zip", "b_folder\\b.7z", "file.txt"]
@@ -58,17 +58,16 @@ def extract_names_from_archive(file_path: Path, config, depth: int = -1,
         tuple[list, Path, bool]: parent label, file or directory name, is directory
     """
 
-    file_ext = get_path_suffix(file_path)
-    label_prefix = [*parent_label, str(file_path)] if parent_label is not None else []
+    label_prefix = [*parent_label, file_path.string] if parent_label is not None else []
     new_depth = depth + 1
 
     try:
         # Decide the stream source: from disk or memory
-        file_stream = io.BytesIO(file_bytes) if file_bytes is not None else open(file_path, 'rb')
+        file_stream = io.BytesIO(file_bytes) if file_bytes is not None else open(file_path.path, 'rb')
 
         # Handle ZIP and RAR archives
-        if file_ext in ('zip', 'rar'):
-            opener = {'zip': zipfile.ZipFile, 'rar': rarfile.RarFile}[file_ext]
+        if file_path.suffix in ('zip', 'rar'):
+            opener = {'zip': zipfile.ZipFile, 'rar': rarfile.RarFile}[file_path.suffix]
             with opener(file_stream) as f:
                 for info in f.infolist():
                     name = Path(info.filename)
@@ -78,7 +77,7 @@ def extract_names_from_archive(file_path: Path, config, depth: int = -1,
                     if not archive_should_skip(
                             name,
                             config,
-                            get_archive_path_size(info, file_ext),
+                            get_archive_path_size(info, file_path.suffix),
                             new_path_ext,
                             is_dir
                     ):
@@ -95,7 +94,7 @@ def extract_names_from_archive(file_path: Path, config, depth: int = -1,
                                 label_prefix
                             )
         # Handle 7Z archives
-        elif file_ext == '7z':
+        elif file_path.suffix == '7z':
             with py7zr.SevenZipFile(file_stream, mode='r') as z:
                 for info in z.list():
                     name = Path(info.filename)
@@ -125,14 +124,14 @@ def extract_names_from_archive(file_path: Path, config, depth: int = -1,
                                 label_prefix
                             )
         # Handle TAR and compressed TAR formats
-        elif file_ext in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
+        elif file_path.suffix in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
             # Specify the mode based on the file ext to open it
             mode = {
                 'tar': 'r',
                 'tar.gz': 'r:gz',
                 'tar.bz2': 'r:bz2',
                 'tar.xz': 'r:xz'
-            }[file_ext]
+            }[file_path.suffix]
 
             with tarfile.open(fileobj=file_stream, mode=mode) as tf:
                 for member in tf.getmembers():
@@ -143,7 +142,7 @@ def extract_names_from_archive(file_path: Path, config, depth: int = -1,
                     if not archive_should_skip(
                             name,
                             config,
-                            get_archive_path_size(member, file_ext),
+                            get_archive_path_size(member, file_path.suffix),
                             new_path_ext,
                             is_dir
                     ):
@@ -166,14 +165,14 @@ def extract_names_from_archive(file_path: Path, config, depth: int = -1,
         return  # silently skip invalid or unreadable archives
 
 
-def extract_text_from_archive(file_path: Path, config, depth: int = -1,
+def extract_text_from_archive(file_path, config, depth: int = -1,
                               file_bytes: bytes | None = None, parent_label: list[str] | None = None):
     """
     Recursively extract (path_label, text_content) from any archive file.
     Supports nested archives like a.zip::b.7z::c.txt.
 
     Parameters:
-        file_path (Path): the archive file path
+        file_path (SysPath): the archive file path
         depth (int): the depth value that is returned recursively
         file_bytes (bytes | None): optional byte data if already read (for recursion)
         parent_label (list): list for nested archive tracking like ["a.zip", "b_folder\\b.7z", "file.txt"]
@@ -182,17 +181,16 @@ def extract_text_from_archive(file_path: Path, config, depth: int = -1,
         (list, str): list of virtual path, content text
     """
 
-    file_ext = get_path_suffix(file_path)
-    label_prefix = [*parent_label, str(file_path)] if parent_label is not None else []
+    label_prefix = [*parent_label, file_path.string] if parent_label is not None else []
     new_depth = depth + 1
 
     try:
         # Decide the stream source: from disk or memory
-        file_stream = io.BytesIO(file_bytes) if file_bytes is not None else open(file_path, 'rb')
+        file_stream = io.BytesIO(file_bytes) if file_bytes is not None else open(file_path.path, 'rb')
 
         # Handle ZIP and RAR archives
-        if file_ext in ('zip', 'rar'):
-            opener = {'zip': zipfile.ZipFile, 'rar': rarfile.RarFile}[file_ext]
+        if file_path.suffix in ('zip', 'rar'):
+            opener = {'zip': zipfile.ZipFile, 'rar': rarfile.RarFile}[file_path.suffix]
             with opener(file_stream) as f:
                 for info in f.infolist():
                     if info.is_dir():
@@ -204,7 +202,7 @@ def extract_text_from_archive(file_path: Path, config, depth: int = -1,
                     if archive_should_skip(
                         file_name,
                         config,
-                        get_archive_path_size(info, file_ext),
+                        get_archive_path_size(info, file_path.suffix),
                         new_path_ext
                     ):
                         continue
@@ -225,7 +223,7 @@ def extract_text_from_archive(file_path: Path, config, depth: int = -1,
                     elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
                         yield [*label_prefix, str(file_name)], data
         # Handle 7Z archives
-        elif file_ext == '7z':
+        elif file_path.suffix == '7z':
             with py7zr.SevenZipFile(file_stream, mode='r') as archive:
                 for info in archive.list():
                     if info.is_directory:
@@ -257,13 +255,13 @@ def extract_text_from_archive(file_path: Path, config, depth: int = -1,
                     elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
                         yield [*label_prefix, str(file_name)], data
         # Handle TAR and compressed TAR formats
-        elif file_ext in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
+        elif file_path.suffix in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
             mode = {
                 'tar': 'r',
                 'tar.gz': 'r:gz',
                 'tar.bz2': 'r:bz2',
                 'tar.xz': 'r:xz'
-            }[file_ext]
+            }[file_path.suffix]
 
             with tarfile.open(fileobj=file_stream, mode=mode) as tf:
                 for member in tf.getmembers():
@@ -280,7 +278,7 @@ def extract_text_from_archive(file_path: Path, config, depth: int = -1,
                     if archive_should_skip(
                         file_name,
                         config,
-                        get_archive_path_size(member, file_ext),
+                        get_archive_path_size(member, file_path.suffix),
                         new_path_ext
                     ):
                         continue
@@ -296,8 +294,8 @@ def extract_text_from_archive(file_path: Path, config, depth: int = -1,
                     elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
                         yield [*label_prefix, str(file_name)], data
         # Handle single compressed files like .gz, .bz2, .xz
-        elif file_ext in ARCHIVE_EXTS[-3:]:
-            opener = {'gz': gzip.open, 'bz2': bz2.open, 'xz': lzma.open}[file_ext]
+        elif file_path.suffix in ARCHIVE_EXTS[-3:]:
+            opener = {'gz': gzip.open, 'bz2': bz2.open, 'xz': lzma.open}[file_path.suffix]
             with opener(file_stream, 'rb') as f:
                 yield label_prefix, f.read()
     except (zipfile.BadZipFile, rarfile.Error, tarfile.ReadError, OSError, EOFError):

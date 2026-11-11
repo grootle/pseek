@@ -1,6 +1,5 @@
 import mmap
 from collections import deque
-from pathlib import Path
 
 from ...structs import ContentResult, FileDirResult, Line, MatchGroup
 from ...utils import add_metric, add_result, get_path_suffix, is_binary
@@ -13,8 +12,7 @@ from ..parser import find_matches
 
 
 def search_paths_inside_archive(
-    p: Path,
-    path_str: str,
+    p,
     config,
     pattern,
     metrics,
@@ -26,7 +24,7 @@ def search_paths_inside_archive(
         name_str = str(name)
 
         if config.stats:
-            full_virtual_path = (path_str, *virtual_path, name_str)
+            full_virtual_path = (p.string, *virtual_path, name_str)
             
             if not is_dir and config.file:
                 add_metric(
@@ -74,7 +72,7 @@ def search_paths_inside_archive(
                 result_queue,
                 arc_match_type,
                 FileDirResult(
-                    path=path_str,
+                    path=p.string,
                     matches=name_matches,
                     virtual_path=[*virtual_path, name_str]
                 ),
@@ -82,24 +80,23 @@ def search_paths_inside_archive(
             )
 
 
-def search_file_and_dir(config, matches: dict, pattern, p: Path,
-                        p_ext: str, metrics, result_queue, result_lock):
+def search_file_and_dir(config, matches: dict, pattern, p,
+                        metrics, result_queue, result_lock):
     """Search files and folders on the system and within archive files"""
 
-    path_str = str(p)
     # Filter by requested path type first to avoid unnecessary pattern matching
     match_type = (
-        'file' if config.file and p.is_file() else
-        'directory' if config.directory and p.is_dir() else
+        'file' if config.file and p.is_file else
+        'directory' if config.directory and p.is_dir else
         None
     )
 
-    if match_type and (pattern is None or pattern.evaluate(p)):
+    if match_type and (pattern is None or pattern.evaluate(p.path)):
         # Find matched query in the name
         name_matches = find_matches(
             pattern,
-            p,
-            len(path_str)
+            p.path,
+            len(p.string)
         )
 
         add_result(
@@ -107,17 +104,16 @@ def search_file_and_dir(config, matches: dict, pattern, p: Path,
             result_queue,
             match_type,
             FileDirResult(
-                path=path_str,
+                path=p.string,
                 matches=name_matches
             ),
             result_lock
         )
 
     # Search for files and directories name inside archive files if archive is active
-    if config.archive and p_ext in ARCHIVE_EXTS[:-3]:
+    if config.archive and p.suffix in ARCHIVE_EXTS[:-3]:
         search_paths_inside_archive(
             p,
-            path_str,
             config,
             pattern,
             metrics,
@@ -203,8 +199,7 @@ class ContextCollector:
 
 
 def search_archive_content(
-    p: Path,
-    path_str: str,
+    p,
     config,
     pattern,
     binary_pattern,
@@ -215,13 +210,13 @@ def search_archive_content(
 ):
     for virtual_path, content in extract_text_from_archive(p, config):
         if config.stats:
-            full_virtual_path = (path_str, *virtual_path)
+            full_virtual_path = (p.string, *virtual_path)
 
             add_metric(
                 metrics,
                 result_queue,
                 'files_scanned',
-                full_virtual_path if virtual_path else path_str,
+                full_virtual_path if virtual_path else p.string,
                 result_lock
             )
 
@@ -254,7 +249,7 @@ def search_archive_content(
                     result_queue,
                     'content',
                     ContentResult(
-                        path=path_str,
+                        path=p.string,
                         virtual_path=virtual_path
                     ),
                     result_lock
@@ -275,7 +270,7 @@ def search_archive_content(
                 result_queue,
                 'content',
                 ContentResult(
-                    path=path_str,
+                    path=p.string,
                     virtual_path=virtual_path,
                     groups=groups
                 ),
@@ -284,16 +279,13 @@ def search_archive_content(
 
 
 def search_content(config, matches: dict, pattern, binary_pattern,
-                   p: Path, p_ext: str, metrics, result_queue, result_lock):
+                   p, metrics, result_queue, result_lock):
     """Search within the contents of system files and files inside archive files"""
 
-    path_str = str(p)
-
     # Search files content inside archives separately.
-    if config.archive and p_ext in ARCHIVE_EXTS:
+    if config.archive and p.suffix in ARCHIVE_EXTS:
         search_archive_content(
             p,
-            path_str,
             config,
             pattern,
             binary_pattern,
@@ -309,7 +301,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
     collector = ContextCollector(config.context)
     try:
         # Memory-map the file for efficient access
-        with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+        with open(p.path, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
             head = mm[:8192]
             if is_binary(head) or (binary_pattern and not content_contains(mm, binary_pattern)):
                 return
@@ -335,7 +327,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                         matches,
                         result_queue,
                         'content',
-                        ContentResult(path=path_str),
+                        ContentResult(path=p.string),
                         result_lock
                     )
                     return
@@ -359,7 +351,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
             result_queue,
             'content',
             ContentResult(
-                path=path_str,
+                path=p.string,
                 groups=groups
             ),
             result_lock

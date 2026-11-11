@@ -6,7 +6,7 @@ from pathlib import Path
 
 from click import BadParameter
 
-from .utils import compile_regex
+from .utils import compile_regex, get_path_suffix
 
 SUFFIXES = {
     'b': 1,  # B
@@ -232,30 +232,81 @@ class SearchConfig:
                 self.no_ignore_parent = True
 
 
-@dataclass
+@dataclass(slots=True)
 class SearchResult:
     path: str
-    virtual_path: list[str] = field(default_factory=list, kw_only=True)
+    virtual_path: list[str] = field(
+        default_factory=list,
+        kw_only=True
+    )
 
 
-@dataclass
+@dataclass(slots=True)
 class FileDirResult(SearchResult):
-    matches: list[tuple[int, int]] = field(default_factory=list, kw_only=True)
+    matches: list[tuple[int, int]] = field(
+        default_factory=list,
+        kw_only=True
+    )
 
 
-@dataclass
+@dataclass(slots=True)
 class Line:
     number: int
     text: str
     matches: list[tuple[int, int]] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class MatchGroup:
     lines: list[Line] = field(default_factory=list)
     matching_lines: set[int] = field(default_factory=set)
 
 
-@dataclass
+@dataclass(slots=True)
 class ContentResult(SearchResult):
-    groups: list[MatchGroup] = field(default_factory=list, kw_only=True)
+    groups: list[MatchGroup] = field(
+        default_factory=list,
+        kw_only=True
+    )
+
+
+@dataclass(slots=True)
+class SysPath:
+    path: Path
+
+    is_symlink: bool
+
+    is_file: bool
+    is_dir: bool
+
+    lstat_result: os.stat_result | None = None
+    _path_str: str | None = None
+    _ext: str | None = None
+
+    def get_lstat(self) -> os.stat_result:
+        """
+        Return cached lstat information.
+        Path.state follows symlinks, so we use lstate.
+        """
+        if self.lstat_result is None:
+            self.lstat_result = self.path.lstat()
+
+        return self.lstat_result
+
+    @property
+    def string(self) -> str:
+        if self._path_str is None:
+            self._path_str = str(self.path)
+
+        return self._path_str
+
+    @property
+    def suffix(self) -> str:
+        if self._ext is None:
+            self._ext = get_path_suffix(self.path)
+
+        return self._ext
+
+    @property
+    def size(self) -> int:
+        return self.get_lstat().st_size

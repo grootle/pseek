@@ -2,30 +2,31 @@ import os
 from collections import defaultdict
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from itertools import islice
-from pathlib import Path
 from threading import RLock
 
-from ...utils import add_metric, get_path_suffix
+from ...utils import add_metric
 from ..archive import ARCHIVE_EXTS
 from ..parser import TermNode, parse_query_expression
 from ..walk import walk
 from .search import search_content, search_file_and_dir
 
 
-def should_skip(config, p: Path, file_ext: str, p_size: int) -> bool:
+def should_skip(config, is_dir: bool, file_ext: str, p_size: int | None) -> bool:
     """
     Check whether the file/directory should be skipped based on various filters.
     Returns True if the path should be skipped.
     """
-    return (config.ext and file_ext not in config.ext) \
-        or (config.exclude_ext and file_ext in config.exclude_ext) \
-        or (config.size and (p.is_dir() or not any(  # .stat().st_size doesn't give actual size of dir.
-                                                     # To measure the actual size,
-                                                     # total size of all files inside it must be calculated,
-                                                     # which is time-consuming
+    return (
+        (config.ext and file_ext not in config.ext)
+        or (config.exclude_ext and file_ext in config.exclude_ext)
+        or (config.size and (is_dir or not any(  # .stat().st_size doesn't give actual size of dir.
+                                                 # To measure the actual size,
+                                                 # total size of all files inside it must be calculated,
+                                                 # which is time-consuming
             minimum <= p_size <= maximum
             for minimum, maximum in config.size
         )))
+    )
 
 
 def process_candidate(item, config, pattern, binary_pattern,
@@ -34,37 +35,42 @@ def process_candidate(item, config, pattern, binary_pattern,
 
     # Dir metrics must be added before should_skip,
     # as it can influence these metrics
-    if config.stats and p.is_dir():
+    if config.stats and p.is_dir:
         add_metric(
             metrics,
             result_queue,
             'directories_scanned',
-            str(p),
+            p.string,
             result_lock
         )
 
     if metric_only:
         return
 
+    p_size = None
+
+    needs_size = (
+        (config.size and not p.is_dir)
+        or (config.content and p.is_file and not p.is_symlink)
+    )
+
     try:
-        p_ext = get_path_suffix(p)
-        # Path.state follows symlinks, so we use lstate here
-        p_size = p.lstat().st_size
+        p_ext = p.suffix
+        if needs_size:
+            p_size = p.size
     except OSError:
         return
 
-    if should_skip(config, p, p_ext, p_size):
+    if should_skip(config, p.is_dir, p_ext, p_size):
         return
 
     if config.stats:
-        path_str = str(p)
-
-        if (config.file or config.content) and p.is_file():
+        if (config.file or config.content) and p.is_file:
             add_metric(
                 metrics,
                 result_queue,
                 'files_scanned',
-                path_str,
+                p.string,
                 result_lock
             )
 
@@ -73,7 +79,7 @@ def process_candidate(item, config, pattern, binary_pattern,
                 metrics,
                 result_queue,
                 'archives_scanned',
-                (path_str,),
+                (p.string,),
                 result_lock
             )
 
@@ -84,7 +90,6 @@ def process_candidate(item, config, pattern, binary_pattern,
             matches,
             pattern,
             p,
-            p_ext,
             metrics,
             result_queue,
             result_lock
@@ -92,15 +97,14 @@ def process_candidate(item, config, pattern, binary_pattern,
 
     # Search for content inside files if requested
     # Avoid empty files
-    if config.content and not p.is_symlink() \
-        and p.is_file() and p_size != 0:
+    if config.content and not p.is_symlink \
+        and p.is_file and p_size != 0:
         search_content(
             config,
             matches,
             pattern,
             binary_pattern,
             p,
-            p_ext,
             metrics,
             result_queue,
             result_lock
