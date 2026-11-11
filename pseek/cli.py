@@ -8,151 +8,10 @@ import rarfile
 
 from .core.search.parallel import seek
 from .core.search.timeout import search_with_timeout
+from .output import echo, echo_stats
 from .structs import SearchConfig
 
 BACKEND_PATH = Path(__file__).parent / "RARBackend"
-
-
-def merge_matches(matches: list[tuple[int, int]]):
-    """Merge overlapping matches (for example, if one match was inside another match)"""
-
-    # sort by start position
-    matches.sort()
-
-    merged = []
-    for start, end in matches:
-        if not merged or start > merged[-1][1]:  # No overlap
-            merged.append((start, end))
-        else:
-            # Merge overlapping
-            merged[-1] = (
-                merged[-1][0],
-                max(merged[-1][1], end)
-            )
-    
-    return merged
-
-
-def build_highlight(text, matches):
-    """Build highlighted text"""
-    parts = []
-    last = 0
-
-    for start, end in matches:
-        parts.append(text[last:start])
-        parts.append(click.style(text[start:end], fg='red', bold=True))
-        last = end
-    parts.append(text[last:])
-
-    return ''.join(parts)
-
-
-def echo(results: dict, context: tuple[int, int]):
-    """Display results with a specific format and color scheme"""
-    for match_type, datas in results.items():
-        if datas:
-            RESULT_TITLES = {
-                "file": "Files",
-                "directory": "Directories",
-                "content": "Contents"
-            }
-            click.secho(f'\n{RESULT_TITLES[match_type]}\n────────────────', fg='yellow')
-
-            for data in datas:
-                if match_type == 'content':  # Print a content-search result and its matching lines
-                    separator = click.style("::", fg="yellow")
-                    # Print file path
-                    click.echo(
-                        separator.join(
-                            [click.style(data.path, fg="cyan"), *(
-                                click.style(path, fg="cyan")
-                                for path in data.virtual_path
-                            )]
-                        )
-                    )
-
-                    counter = 0
-                    for group in data.groups:
-                        if any(context):
-                            if counter != 0:
-                                print('---')
-                            else:
-                                counter = 1
-
-                        for line in group.lines:
-                            if line.number in group.matching_lines:
-                                matches = merge_matches(line.matches)
-
-                            prefix = click.style(
-                                f'{line.number}' + (':' if line.number in group.matching_lines else '-'),
-                                fg='magenta'
-                            )
-                            output_line = prefix + (build_highlight(line.text, matches) \
-                                if line.number in group.matching_lines \
-                                else line.text)
-
-                            print(output_line)
-
-                    # Print a blank line to separate results
-                    if data.groups:
-                        print()
-                else:  # Print a file or directory match, including archive paths
-                    matches = merge_matches(data.matches)
-                    
-                    if data.virtual_path:  # Render archive results
-                        separator = click.style("::", fg="yellow")
-                        virtual_file_name = build_highlight(
-                            data.virtual_path[-1],
-                            matches
-                        )
-
-                        print(
-                            separator.join(
-                                [data.path, *data.virtual_path[0:-1], virtual_file_name]
-                            )
-                        )
-                    else:
-                        print(
-                            build_highlight(data.path, matches)
-                        )
-
-
-def echo_stats(config, results, metrics, elapsed_time=None):
-    """Render stats in a specific format and color scheme for display in the terminal"""
-    
-    INDENT = '  '
-    click.secho('\nStatistics\n────────────────', fg='yellow')
-
-    click.secho('Results', fg="cyan")
-    if config.file:
-        click.echo(INDENT + f'Files matched: {len(results["file"]):,}')
-    
-    if config.directory:
-        click.echo(INDENT + f'Directories matched: {len(results["directory"]):,}')
-
-    if config.content:
-        click.echo(INDENT + f'Files with matched content: {len(results["content"]):,}')
-        
-        lines_matched = sum(len(group.matching_lines) for file in results["content"] for group in file.groups)
-        matches = sum(
-            len(line.matches)
-            for file in results["content"]
-            for group in file.groups for line in group.lines
-        )
-        
-        if lines_matched:
-            click.echo(INDENT + f"Lines matched: {lines_matched:,}")
-        if matches:
-            click.echo(INDENT + f"Matches: {matches:,}")
-    
-    click.secho('\nSearch', fg="cyan")
-    if config.file or config.content:
-        click.echo(INDENT + f"Files scanned: {len(metrics['files_scanned']):,}")
-    if config.archive:
-        click.echo(INDENT + f"Archives scanned: {len(metrics['archives_scanned']):,}")
-    click.echo(INDENT + f"Directories scanned: {len(metrics['directories_scanned']):,}")
-    
-    click.echo(click.style("\nSearch time: ", fg='magenta') + f'{elapsed_time:.6f}s')
 
 
 def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str):
@@ -329,6 +188,9 @@ def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str
 @click.option('--timeout', metavar='FLOAT',
               type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
+@click.option('--sort', 'sortby', metavar='SORTBY',
+              type=click.Choice(['none', 'path']),
+              default='none', show_default=True)
 @click.option('--threads', metavar='NUM', type=click.IntRange(min=0), default=0,
               help='This flag sets the approximate number of threads to use. '
               'A value of 0 (which is the default) causes pseek to choose the thread count using heuristics.')
@@ -356,7 +218,7 @@ def search(**kwargs):
         results, metrics, elapsed, timed_out = search_with_timeout(config)
 
         # Even if the search timed out, display all results found before termination.
-        echo(results, config.context)
+        echo(results, config.context, config.sortby)
 
         if timed_out:
             click.secho(
@@ -371,7 +233,7 @@ def search(**kwargs):
         results, metrics = seek(config)
         elapsed = time.perf_counter() - start
         
-        echo(results, config.context)
+        echo(results, config.context, config.sortby)
         if config.stats:
             echo_stats(config, results, metrics, elapsed)
 

@@ -11,6 +11,7 @@ from pathlib import Path
 import py7zr
 import rarfile
 
+from ..structs import SysPath
 from ..utils import get_path_suffix, is_binary
 
 # Archive extensions that are allowed
@@ -27,22 +28,21 @@ def get_archive_path_size(info, file_type: str) -> int:
         return info.size
 
 
-def archive_should_skip(path_info: Path, config, p_size: float, file_ext, is_dir=False):
+def archive_should_skip(path_info: SysPath, config):
     """Check whether the file/directory inside archive files should be skipped based on various filters"""
 
-    path_info_str = str(path_info)
-    return (config.arc_include and not any(path_info.is_relative_to(inc) for inc in config.arc_include)) \
-            or (config.arc_exclude and any(path_info.is_relative_to(exc) for exc in config.arc_exclude)) \
-            or (config.arc_ext and file_ext not in config.arc_ext) \
-            or (config.arc_exc_ext and file_ext in config.arc_exc_ext) \
-            or (config.arc_size and (is_dir or not any(
-                minimum <= p_size <= maximum
+    return (config.arc_include and not any(path_info.path.is_relative_to(inc) for inc in config.arc_include)) \
+            or (config.arc_exclude and any(path_info.path.is_relative_to(exc) for exc in config.arc_exclude)) \
+            or (config.arc_ext and path_info.suffix not in config.arc_ext) \
+            or (config.arc_exc_ext and path_info.suffix in config.arc_exc_ext) \
+            or (config.arc_size and (path_info.is_dir or not any(
+                minimum <= path_info.size <= maximum
                 for minimum, maximum in config.arc_size
-            ))) or (config.re_include and not config.re_include.search(path_info_str)) \
-        or (config.re_exclude and config.re_exclude.search(path_info_str) is not None)
+            ))) or (config.re_include and not config.re_include.search(path_info.string)) \
+        or (config.re_exclude and config.re_exclude.search(path_info.string) is not None)
 
 
-def extract_names_from_archive(file_path, config, depth: int = -1,
+def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                                file_bytes: bytes | None = None, parent_label: list[str] | None = None):
     """
     Recursively extract files and directories name from archive files.
@@ -55,7 +55,7 @@ def extract_names_from_archive(file_path, config, depth: int = -1,
         parent_label (list): list for nested archive tracking like ["a.zip", "b_folder\\b.7z", "file.txt"]
 
     Yields:
-        tuple[list, Path, bool]: parent label, file or directory name, is directory
+        tuple[list, SysPath]: parent label, file or directory data
     """
 
     label_prefix = [*parent_label, file_path.string] if parent_label is not None else []
@@ -70,22 +70,20 @@ def extract_names_from_archive(file_path, config, depth: int = -1,
             opener = {'zip': zipfile.ZipFile, 'rar': rarfile.RarFile}[file_path.suffix]
             with opener(file_stream) as f:
                 for info in f.infolist():
-                    name = Path(info.filename)
                     is_dir = info.is_dir()
-                    new_path_ext = get_path_suffix(name, is_dir)
+                    name = SysPath(
+                        path=Path(info.filename),
+                        is_file=not is_dir,
+                        is_dir=is_dir,
+                        psize=get_archive_path_size(info, file_path.suffix)
+                    )
 
-                    if not archive_should_skip(
-                            name,
-                            config,
-                            get_archive_path_size(info, file_path.suffix),
-                            new_path_ext,
-                            is_dir
-                    ):
+                    if not archive_should_skip(name, config):
                         if any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
-                            yield label_prefix, name, is_dir
+                            yield label_prefix, name
 
                         # Check if this is a nested archive
-                        if new_path_ext in ARCHIVE_EXTS[:-3] and any(new_depth < d[1] for d in config.arc_depth):
+                        if name.suffix in ARCHIVE_EXTS[:-3] and any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_names_from_archive(
                                 name,
                                 config,
@@ -97,21 +95,19 @@ def extract_names_from_archive(file_path, config, depth: int = -1,
         elif file_path.suffix == '7z':
             with py7zr.SevenZipFile(file_stream, mode='r') as z:
                 for info in z.list():
-                    name = Path(info.filename)
                     is_dir = info.is_directory
-                    new_path_ext = get_path_suffix(name, is_dir)
+                    name = SysPath(
+                        path=Path(info.filename),
+                        is_file=not is_dir,
+                        is_dir=is_dir,
+                        psize=get_archive_path_size(info, '7z')
+                    )
 
-                    if not archive_should_skip(
-                            name,
-                            config,
-                            get_archive_path_size(info, '7z'),
-                            new_path_ext,
-                            is_dir
-                    ):
+                    if not archive_should_skip(name, config):
                         if any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
-                            yield label_prefix, name, is_dir
+                            yield label_prefix, name
 
-                        if new_path_ext in ARCHIVE_EXTS[:-3] and any(new_depth < d[1] for d in config.arc_depth):
+                        if name.suffix in ARCHIVE_EXTS[:-3] and any(new_depth < d[1] for d in config.arc_depth):
                             file_data = z.read([info.filename]).get(info.filename)
                             if file_data is None:
                                 continue
@@ -135,21 +131,19 @@ def extract_names_from_archive(file_path, config, depth: int = -1,
 
             with tarfile.open(fileobj=file_stream, mode=mode) as tf:
                 for member in tf.getmembers():
-                    name = Path(member.name)
                     is_dir = member.isdir()
-                    new_path_ext = get_path_suffix(name, is_dir)
+                    name = SysPath(
+                        path=Path(member.name),
+                        is_file=not is_dir,
+                        is_dir=is_dir,
+                        psize=get_archive_path_size(member, file_path.suffix)
+                    )
 
-                    if not archive_should_skip(
-                            name,
-                            config,
-                            get_archive_path_size(member, file_path.suffix),
-                            new_path_ext,
-                            is_dir
-                    ):
+                    if not archive_should_skip(name, config):
                         if any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
-                            yield label_prefix, name, is_dir
+                            yield label_prefix, name
 
-                        if new_path_ext in ARCHIVE_EXTS[:-3] and any(new_depth < d[1] for d in config.arc_depth):
+                        if name.suffix in ARCHIVE_EXTS[:-3] and any(new_depth < d[1] for d in config.arc_depth):
                             f = tf.extractfile(member)
                             if f is None:
                                 continue
@@ -165,7 +159,7 @@ def extract_names_from_archive(file_path, config, depth: int = -1,
         return  # silently skip invalid or unreadable archives
 
 
-def extract_text_from_archive(file_path, config, depth: int = -1,
+def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                               file_bytes: bytes | None = None, parent_label: list[str] | None = None):
     """
     Recursively extract (path_label, text_content) from any archive file.
@@ -196,32 +190,31 @@ def extract_text_from_archive(file_path, config, depth: int = -1,
                     if info.is_dir():
                         continue
 
-                    file_name = Path(info.filename)
-                    new_path_ext = get_path_suffix(file_name)
+                    file_name = SysPath(
+                        path=Path(info.filename),
+                        is_file=True,
+                        is_dir=False,
+                        psize=get_archive_path_size(info, file_path.suffix)
+                    )
 
-                    if archive_should_skip(
-                        file_name,
-                        config,
-                        get_archive_path_size(info, file_path.suffix),
-                        new_path_ext
-                    ):
+                    if archive_should_skip(file_name, config):
                         continue
 
                     with f.open(info) as entry:
                         head = entry.read(8192)
 
-                        if is_binary(head) and new_path_ext not in ARCHIVE_EXTS:
+                        if is_binary(head) and file_name.suffix not in ARCHIVE_EXTS:
                             continue
 
                         # 8 KiB has already been consumed from stream. If we use entry.read(), we will lose that 8 KiB
                         data = head + entry.read()
 
                     # Check if this is a nested archive
-                    if new_path_ext in ARCHIVE_EXTS:
+                    if file_name.suffix in ARCHIVE_EXTS:
                         if any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
                     elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
-                        yield [*label_prefix, str(file_name)], data
+                        yield [*label_prefix, file_name.string], data
         # Handle 7Z archives
         elif file_path.suffix == '7z':
             with py7zr.SevenZipFile(file_stream, mode='r') as archive:
@@ -233,27 +226,26 @@ def extract_text_from_archive(file_path, config, depth: int = -1,
                     if file_data is None:
                         continue
 
-                    file_name = Path(info.filename)
-                    new_path_ext = get_path_suffix(file_name)
+                    file_name = SysPath(
+                        path=Path(info.filename),
+                        is_file=True,
+                        is_dir=False,
+                        psize=get_archive_path_size(info, '7z')
+                    )
 
-                    if archive_should_skip(
-                        file_name,
-                        config,
-                        get_archive_path_size(info, '7z'),
-                        new_path_ext
-                    ):
+                    if archive_should_skip(file_name, config):
                         continue
                     
                     head = file_data.read(8192)
-                    if is_binary(head) and new_path_ext not in ARCHIVE_EXTS:
+                    if is_binary(head) and file_name.suffix not in ARCHIVE_EXTS:
                         continue
                     
                     data = head + file_data.read()
-                    if new_path_ext in ARCHIVE_EXTS:
+                    if file_name.suffix in ARCHIVE_EXTS:
                         if any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
                     elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
-                        yield [*label_prefix, str(file_name)], data
+                        yield [*label_prefix, file_name.string], data
         # Handle TAR and compressed TAR formats
         elif file_path.suffix in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
             mode = {
@@ -272,27 +264,26 @@ def extract_text_from_archive(file_path, config, depth: int = -1,
                     if f is None:
                         continue
 
-                    file_name = Path(member.name)
-                    new_path_ext = get_path_suffix(file_name)
+                    file_name = SysPath(
+                        path=Path(member.name),
+                        is_file=True,
+                        is_dir=False,
+                        psize=get_archive_path_size(member, file_path.suffix)
+                    )
 
-                    if archive_should_skip(
-                        file_name,
-                        config,
-                        get_archive_path_size(member, file_path.suffix),
-                        new_path_ext
-                    ):
+                    if archive_should_skip(file_name, config):
                         continue
                     
                     head = f.read(8192)
-                    if is_binary(head) and new_path_ext not in ARCHIVE_EXTS:
+                    if is_binary(head) and file_name.suffix not in ARCHIVE_EXTS:
                         continue
 
                     data = head + f.read()
-                    if new_path_ext in ARCHIVE_EXTS:
+                    if file_name.suffix in ARCHIVE_EXTS:
                         if any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
                     elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
-                        yield [*label_prefix, str(file_name)], data
+                        yield [*label_prefix, file_name.string], data
         # Handle single compressed files like .gz, .bz2, .xz
         elif file_path.suffix in ARCHIVE_EXTS[-3:]:
             opener = {'gz': gzip.open, 'bz2': bz2.open, 'xz': lzma.open}[file_path.suffix]

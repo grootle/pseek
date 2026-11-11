@@ -171,6 +171,7 @@ class SearchConfig:
     stats: bool
     context: tuple[int, int]
     threads: int
+    sortby: str
     
     def __post_init__(self):
         """Post-initialization processing to normalize and validate inputs"""
@@ -274,11 +275,12 @@ class ContentResult(SearchResult):
 class SysPath:
     path: Path
 
-    is_symlink: bool
-
     is_file: bool
     is_dir: bool
 
+    is_symlink: bool = False
+
+    psize: int | None = None
     lstat_result: os.stat_result | None = None
     _path_str: str | None = None
     _ext: str | None = None
@@ -303,10 +305,16 @@ class SysPath:
     @property
     def suffix(self) -> str:
         if self._ext is None:
-            self._ext = get_path_suffix(self.path)
+            self._ext = get_path_suffix(
+                self.path,
+                is_dir=self.is_dir
+            )
 
         return self._ext
 
     @property
     def size(self) -> int:
-        return self.get_lstat().st_size
+        if self.psize is None:
+            self.psize = self.get_lstat().st_size
+
+        return self.psize

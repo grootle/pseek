@@ -20,13 +20,11 @@ def search_paths_inside_archive(
     result_lock,
     matches
 ):
-    for virtual_path, name, is_dir in extract_names_from_archive(p, config):
-        name_str = str(name)
-
+    for virtual_path, name in extract_names_from_archive(p, config):
         if config.stats:
-            full_virtual_path = (p.string, *virtual_path, name_str)
+            full_virtual_path = (p.string, *virtual_path, name.string)
             
-            if not is_dir and config.file:
+            if not name.is_dir and config.file:
                 add_metric(
                     metrics,
                     result_queue,
@@ -34,7 +32,7 @@ def search_paths_inside_archive(
                     full_virtual_path,
                     result_lock
                 )
-            elif is_dir:
+            elif name.is_dir:
                 add_metric(
                     metrics,
                     result_queue,
@@ -55,16 +53,16 @@ def search_paths_inside_archive(
                 )
 
         arc_match_type = (
-            'file' if config.file and not is_dir else
-            'directory' if config.directory and is_dir else
+            'file' if config.file and not name.is_dir else
+            'directory' if config.directory and name.is_dir else
             None
         )
 
-        if arc_match_type and (pattern is None or pattern.evaluate(name)):
+        if arc_match_type and (pattern is None or pattern.evaluate(name.path)):
             name_matches = find_matches(
                 pattern,
-                name,
-                len(name_str)
+                name.path,
+                len(name.string)
             )
 
             add_result(
@@ -74,7 +72,7 @@ def search_paths_inside_archive(
                 FileDirResult(
                     path=p.string,
                     matches=name_matches,
-                    virtual_path=[*virtual_path, name_str]
+                    virtual_path=[*virtual_path, name.string]
                 ),
                 result_lock
             )
