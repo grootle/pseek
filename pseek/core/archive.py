@@ -214,7 +214,7 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         if any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
                     elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
-                        yield [*label_prefix, file_name.string], data
+                        yield [*label_prefix, file_name], data
         # Handle 7Z archives
         elif file_path.suffix == '7z':
             with py7zr.SevenZipFile(file_stream, mode='r') as archive:
@@ -245,7 +245,7 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         if any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
                     elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
-                        yield [*label_prefix, file_name.string], data
+                        yield [*label_prefix, file_name], data
         # Handle TAR and compressed TAR formats
         elif file_path.suffix in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
             mode = {
@@ -283,11 +283,13 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         if any(new_depth < d[1] for d in config.arc_depth):
                             yield from extract_text_from_archive(file_name, config, new_depth, data, label_prefix)
                     elif any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
-                        yield [*label_prefix, file_name.string], data
+                        yield [*label_prefix, file_name], data
         # Handle single compressed files like .gz, .bz2, .xz
         elif file_path.suffix in ARCHIVE_EXTS[-3:]:
             opener = {'gz': gzip.open, 'bz2': bz2.open, 'xz': lzma.open}[file_path.suffix]
             with opener(file_stream, 'rb') as f:
+                if label_prefix:
+                    label_prefix = [*label_prefix[:-1], file_path]
                 yield label_prefix, f.read()
     except (zipfile.BadZipFile, rarfile.Error, tarfile.ReadError, OSError, EOFError):
         return

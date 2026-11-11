@@ -38,17 +38,36 @@ def build_highlight(text, matches):
 
 
 def path_sort_key(data):
-    value = '::'.join((data.path, *data.virtual_path))
+    if data.virtual_path:
+        value = '::'.join(
+            (
+                data.path,
+                *data.virtual_path[:-1],
+                data.virtual_path[-1].string
+            )
+        )
+    else:
+        value = data.path.string
     # Normalize case on case-insensitive platforms.
     # If the normcase paths are identical,
     # use the original value for comparison.
     return os.path.normcase(value), value
 
 
+def size_sort_key(data):
+    if data.virtual_path:
+        return data.virtual_path[-1].size
+    else:
+        return data.path.size
+
+
 def sort_results(sortby: str, datas: list, match_type: str):
     match sortby:
         case 'path':
             datas.sort(key=path_sort_key)
+        case 'size':
+            if match_type != 'directory':
+                datas.sort(key=size_sort_key)
         case _:
             pass
 
@@ -68,16 +87,23 @@ def echo(results: dict, context: tuple[int, int], sortby: str):
 
             for data in datas:
                 if match_type == 'content':  # Print a content-search result and its matching lines
-                    separator = click.style("::", fg="yellow")
                     # Print file path
-                    click.echo(
-                        separator.join(
-                            [click.style(data.path, fg="cyan"), *(
-                                click.style(path, fg="cyan")
-                                for path in data.virtual_path
-                            )]
+                    if data.virtual_path:
+                        separator = click.style("::", fg="yellow")
+                        click.echo(
+                            separator.join(
+                                [
+                                    click.style(data.path, fg="cyan"),
+                                    *(
+                                        click.style(path, fg="cyan")
+                                        for path in data.virtual_path[:-1]
+                                    ),
+                                    click.style(data.virtual_path[-1].string, fg="cyan")
+                                ]
+                            )
                         )
-                    )
+                    else:
+                        click.secho(data.path.string, fg="cyan")
 
                     counter = 0
                     for group in data.groups:
@@ -110,7 +136,7 @@ def echo(results: dict, context: tuple[int, int], sortby: str):
                     if data.virtual_path:  # Render archive results
                         separator = click.style("::", fg="yellow")
                         virtual_file_name = build_highlight(
-                            data.virtual_path[-1],
+                            data.virtual_path[-1].string,
                             matches
                         )
 
@@ -121,7 +147,7 @@ def echo(results: dict, context: tuple[int, int], sortby: str):
                         )
                     else:
                         print(
-                            build_highlight(data.path, matches)
+                            build_highlight(data.path.string, matches)
                         )
 
 

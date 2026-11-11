@@ -72,7 +72,7 @@ def search_paths_inside_archive(
                 FileDirResult(
                     path=p.string,
                     matches=name_matches,
-                    virtual_path=[*virtual_path, name.string]
+                    virtual_path=[*virtual_path, name]
                 ),
                 result_lock
             )
@@ -102,7 +102,7 @@ def search_file_and_dir(config, matches: dict, pattern, p,
             result_queue,
             match_type,
             FileDirResult(
-                path=p.string,
+                path=p,
                 matches=name_matches
             ),
             result_lock
@@ -208,7 +208,9 @@ def search_archive_content(
 ):
     for virtual_path, content in extract_text_from_archive(p, config):
         if config.stats:
-            full_virtual_path = (p.string, *virtual_path)
+            last_virtual_path = (virtual_path[-1].string,) \
+                if virtual_path else ()
+            full_virtual_path = (p.string, *virtual_path[:-1], *last_virtual_path)
 
             add_metric(
                 metrics,
@@ -247,7 +249,7 @@ def search_archive_content(
                     result_queue,
                     'content',
                     ContentResult(
-                        path=p.string,
+                        path=p.string if virtual_path else p,
                         virtual_path=virtual_path
                     ),
                     result_lock
@@ -268,7 +270,7 @@ def search_archive_content(
                 result_queue,
                 'content',
                 ContentResult(
-                    path=p.string,
+                    path=p.string if virtual_path else p,
                     virtual_path=virtual_path,
                     groups=groups
                 ),
@@ -325,7 +327,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
                         matches,
                         result_queue,
                         'content',
-                        ContentResult(path=p.string),
+                        ContentResult(path=p),
                         result_lock
                     )
                     return
@@ -349,7 +351,7 @@ def search_content(config, matches: dict, pattern, binary_pattern,
             result_queue,
             'content',
             ContentResult(
-                path=p.string,
+                path=p,
                 groups=groups
             ),
             result_lock

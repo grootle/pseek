@@ -234,44 +234,6 @@ class SearchConfig:
 
 
 @dataclass(slots=True)
-class SearchResult:
-    path: str
-    virtual_path: list[str] = field(
-        default_factory=list,
-        kw_only=True
-    )
-
-
-@dataclass(slots=True)
-class FileDirResult(SearchResult):
-    matches: list[tuple[int, int]] = field(
-        default_factory=list,
-        kw_only=True
-    )
-
-
-@dataclass(slots=True)
-class Line:
-    number: int
-    text: str
-    matches: list[tuple[int, int]] = field(default_factory=list)
-
-
-@dataclass(slots=True)
-class MatchGroup:
-    lines: list[Line] = field(default_factory=list)
-    matching_lines: set[int] = field(default_factory=set)
-
-
-@dataclass(slots=True)
-class ContentResult(SearchResult):
-    groups: list[MatchGroup] = field(
-        default_factory=list,
-        kw_only=True
-    )
-
-
-@dataclass(slots=True)
 class SysPath:
     path: Path
 
@@ -318,3 +280,41 @@ class SysPath:
             self.psize = self.get_lstat().st_size
 
         return self.psize
+
+
+@dataclass(slots=True)
+class SearchResult:
+    path: str | SysPath
+    virtual_path: list[str | SysPath] = field(
+        default_factory=list,
+        kw_only=True
+    )
+
+
+@dataclass(slots=True)
+class FileDirResult(SearchResult):
+    matches: list[tuple[int, int]] = field(
+        default_factory=list,
+        kw_only=True
+    )
+
+
+@dataclass(slots=True)
+class Line:
+    number: int
+    text: str
+    matches: list[tuple[int, int]] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class MatchGroup:
+    lines: list[Line] = field(default_factory=list)
+    matching_lines: set[int] = field(default_factory=set)
+
+
+@dataclass(slots=True)
+class ContentResult(SearchResult):
+    groups: list[MatchGroup] = field(
+        default_factory=list,
+        kw_only=True
+    )
