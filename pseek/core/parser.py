@@ -1,13 +1,12 @@
 import json
 import re
-from itertools import permutations
 from pathlib import Path
 
 import click
 from lark import Lark, Transformer
 from rapidfuzz import fuzz
 
-from .utils import compile_regex
+from ..utils import compile_regex
 
 
 class ExprNode:

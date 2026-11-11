@@ -11,7 +11,7 @@ from pathlib import Path
 import py7zr
 import rarfile
 
-from .utils import get_path_suffix, is_binary
+from ..utils import get_path_suffix, is_binary
 
 # Archive extensions that are allowed
 ARCHIVE_EXTS = ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'gz', 'bz2', 'xz')

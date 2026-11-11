@@ -50,3 +50,29 @@ def get_path_suffix(path: Path | str, is_dir: bool | None = None) -> str | None:
 def is_binary(data) -> bool:
     """Check if a file is binary by reading the first 8 KiB and looking for null bytes."""
     return b'\x00' in data
+
+
+def add_result(matches, result_queue, match_type, value, lock):
+    if result_queue is not None:
+        # Queue.put() is thread-safe for standard Python queues
+        result_queue.put((match_type, value))
+        return
+
+    if lock is None:
+        matches[match_type].append(value)
+    else:
+        with lock:
+            matches[match_type].append(value)
+
+
+def add_metric(metrics, result_queue, name, value, lock):
+    if result_queue is not None:
+        # Queue.put() is thread-safe for standard Python queues
+        result_queue.put(('metric', (name, value)))
+        return
+
+    if lock is None:
+        metrics[name].add(value)
+    else:
+        with lock:
+            metrics[name].add(value)
