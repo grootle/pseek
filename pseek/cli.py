@@ -185,6 +185,11 @@ def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str
 @click.option('-l', '--paths-only', is_flag=True, help='Only show matching file paths for content search.')
 @click.option('-S', '--stats', is_flag=True,
               help='Show search statistics including result counts and search time.')
+@click.option('--show-size', is_flag=True,
+              help='Show file sizes next to their paths. '
+              'Since calculating the size of directories is time-consuming, '
+              'their sizes are not displayed. Sizes use binary (IEC) prefixes '
+              '— KiB, MiB, GiB — not decimal (KB, MB, GB).')
 @click.option('--timeout', metavar='FLOAT',
               type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
@@ -218,7 +223,7 @@ def search(**kwargs):
         results, metrics, elapsed, timed_out = search_with_timeout(config)
 
         # Even if the search timed out, display all results found before termination.
-        echo(results, config.context, config.sortby)
+        echo(results, config)
 
         if timed_out:
             click.secho(
@@ -233,7 +238,7 @@ def search(**kwargs):
         results, metrics = seek(config)
         elapsed = time.perf_counter() - start
         
-        echo(results, config.context, config.sortby)
+        echo(results, config)
         if config.stats:
             echo_stats(config, results, metrics, elapsed)
 

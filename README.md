@@ -63,6 +63,7 @@ Fast and powerful command-line search tool for finding files, directories, and t
     * [Show Full Paths](#show-full-paths)
     * [Paths Only](#paths-only)
     * [Context](#context)
+    * [Show Size](#show-size)
     * [Timeout](#timeout)
     * [Statistics](#statistics)
         * [Result Statistics](#result-statistics)
@@ -216,6 +217,7 @@ psk --exclude build
 | `--paths-only` | Only show matching file paths for content search |
 | `--stats` | Show search statistics including result counts and search time |
 | `--threads` | This flag sets the approximate number of threads to use. A value of 0 (which is the default) causes pseek to choose the thread count using heuristics |
+| `--show-size` | Show file sizes next to their paths. Since calculating the size of directories is time-consuming, their sizes are not displayed. Sizes use binary (IEC) prefixes — KiB, MiB, GiB — not decimal (KB, MB, GB) |
 
 ## Specifying the Root Directory
 
@@ -921,6 +923,31 @@ Show context lines around each match. The value is specified as `BEFORE:AFTER`:
 ```
 
 Nearby matches whose context ranges overlap or directly touch are combined into a single group.
+
+### Show Size
+
+Display file sizes next to their paths.
+
+Directory entries are still displayed, but their sizes are omitted. Calculating the total size of a directory requires scanning its contents, which can be time-consuming.
+
+Sizes use binary (IEC) units rather than decimal units:
+
+- `B` — Bytes
+- `KiB` — Kibibytes (1 KiB = 1,024 bytes)
+- `MiB` — Mebibytes
+- `GiB` — Gibibytes
+- `TiB` — Tebibytes
+
+Values smaller than 1 KiB are displayed as whole bytes. Larger values are displayed with two decimal places.
+
+**Example:**
+
+```text
+512 B
+1.50 KiB
+2.00 MiB
+1.25 GiB
+```
 
 ### Timeout
 

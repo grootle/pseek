@@ -72,11 +72,42 @@ def sort_results(sortby: str, datas: list, match_type: str):
             pass
 
 
-def echo(results: dict, context: tuple[int, int], sortby: str):
+def convert_size(size_bytes: int) -> str:
+    if size_bytes < 0:
+        raise ValueError('Size cannot be negative')
+
+    units = ('B', 'KiB', 'MiB', 'GiB', 'TiB',
+             'PiB', 'EiB', 'ZiB', 'YiB')
+
+    if size_bytes < 1024:
+        return f'{size_bytes} B'
+
+    i = min(
+        # Implement log2 using the bit-length of the number.
+        # 1024 has length of 11 bits. 1024**2 = 21 bits ...
+        (size_bytes.bit_length() - 1) // 10,
+        len(units) - 1
+    )
+
+    # 1 << (10 * i) == 1024**i (Left bit shift)
+    # It shifts 1 to left by (10 * i) positions
+    # and places the same number of 0s on right.
+    # Each 0 means the number is multiplied by 2.
+    size = size_bytes / (1 << (10 * i))
+
+    # Avoid displaying 1024.00 KiB instead of 1.00 MiB.
+    if i < len(units) - 1 and round(size, 2) >= 1024:
+        i += 1
+        size = size_bytes / (1 << (10 * i))
+
+    return f'{size:.2f} {units[i]}'
+
+
+def echo(results: dict, config):
     """Display results with a specific format and color scheme"""
     for match_type, datas in results.items():
         if datas:
-            sort_results(sortby, datas, match_type)
+            sort_results(config.sortby, datas, match_type)
 
             RESULT_TITLES = {
                 "file": "Files",
@@ -100,14 +131,22 @@ def echo(results: dict, context: tuple[int, int], sortby: str):
                                     ),
                                     click.style(data.virtual_path[-1].string, fg="cyan")
                                 ]
+                            ) + ( 
+                                ' - ' + convert_size(data.virtual_path[-1].size)
+                                if config.show_size else ''
                             )
                         )
                     else:
-                        click.secho(data.path.string, fg="cyan")
+                        click.echo(
+                            click.style(data.path.string, fg="cyan") + ( 
+                                ' - ' + convert_size(data.path.size)
+                                if config.show_size else ''
+                            )
+                        )
 
                     counter = 0
                     for group in data.groups:
-                        if any(context):
+                        if any(config.context):
                             if counter != 0:
                                 print('---')
                             else:
@@ -143,11 +182,17 @@ def echo(results: dict, context: tuple[int, int], sortby: str):
                         print(
                             separator.join(
                                 [data.path, *data.virtual_path[0:-1], virtual_file_name]
+                            ) + ( 
+                                ' - ' + convert_size(data.virtual_path[-1].size)
+                                if config.show_size and not data.virtual_path[-1].is_dir else ''
                             )
                         )
                     else:
                         print(
-                            build_highlight(data.path.string, matches)
+                            build_highlight(data.path.string, matches) + ( 
+                                ' - ' + convert_size(data.path.size)
+                                if config.show_size and not data.path.is_dir else ''
+                            )
                         )
 
 
