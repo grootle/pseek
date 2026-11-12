@@ -245,6 +245,7 @@ class SysPath:
 
     psize: int | None = None
     mtime_ns: int | None = None
+    depth: int | tuple | None = None
     lstat_result: os.stat_result | None = None
     _path_str: str | None = None
     _ext: str | None = None

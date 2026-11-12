@@ -120,6 +120,7 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
                                 if not is_symlink else True,
                             is_dir=is_dir if not is_symlink else False,
                             is_symlink=is_symlink,
+                            depth=new_depth
                         ),
                         metric_only
                     )
@@ -178,7 +179,8 @@ def walk(config):
                     is_file=is_file if not is_symlink else True,
                     is_dir=is_dir if not is_symlink else False,
                     is_symlink=is_symlink,
-                    lstat_result=st
+                    lstat_result=st,
+                    depth=depth
                 ),
                 False
             )

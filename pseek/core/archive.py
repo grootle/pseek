@@ -98,7 +98,12 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=not is_dir,
                         is_dir=is_dir,
                         psize=get_archive_path_size(info, file_path.suffix),
-                        mtime_ns=get_modified_time(info, file_path.suffix, config.sortby)
+                        mtime_ns=get_modified_time(info, file_path.suffix, config.sortby),
+                        depth=(
+                            (file_path.depth, new_depth)
+                            if not isinstance(file_path.depth, tuple)
+                            else (file_path.depth[0], new_depth)
+                        )
                     )
 
                     if not archive_should_skip(name, config):
@@ -124,7 +129,12 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=not is_dir,
                         is_dir=is_dir,
                         psize=get_archive_path_size(info, '7z'),
-                        mtime_ns=get_modified_time(info, '7z', config.sortby)
+                        mtime_ns=get_modified_time(info, '7z', config.sortby),
+                        depth=(
+                            (file_path.depth, new_depth)
+                            if not isinstance(file_path.depth, tuple)
+                            else (file_path.depth[0], new_depth)
+                        )
                     )
 
                     if not archive_should_skip(name, config):
@@ -163,7 +173,12 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=not is_dir,
                         is_dir=is_dir,
                         psize=get_archive_path_size(member, file_path.suffix),
-                        mtime_ns=get_modified_time(member, file_path.suffix, config.sortby)
+                        mtime_ns=get_modified_time(member, file_path.suffix, config.sortby),
+                        depth=(
+                            (file_path.depth, new_depth)
+                            if not isinstance(file_path.depth, tuple)
+                            else (file_path.depth[0], new_depth)
+                        )
                     )
 
                     if not archive_should_skip(name, config):
@@ -222,7 +237,12 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=True,
                         is_dir=False,
                         psize=get_archive_path_size(info, file_path.suffix),
-                        mtime_ns=get_modified_time(info, file_path.suffix, config.sortby)
+                        mtime_ns=get_modified_time(info, file_path.suffix, config.sortby),
+                        depth=(
+                            (file_path.depth, new_depth)
+                            if not isinstance(file_path.depth, tuple)
+                            else (file_path.depth[0], new_depth)
+                        )
                     )
 
                     if archive_should_skip(file_name, config):
@@ -255,7 +275,12 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=True,
                         is_dir=False,
                         psize=get_archive_path_size(info, '7z'),
-                        mtime_ns=get_modified_time(info, '7z', config.sortby)
+                        mtime_ns=get_modified_time(info, '7z', config.sortby),
+                        depth=(
+                            (file_path.depth, new_depth)
+                            if not isinstance(file_path.depth, tuple)
+                            else (file_path.depth[0], new_depth)
+                        )
                     )
 
                     if archive_should_skip(file_name, config):
@@ -298,7 +323,12 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=True,
                         is_dir=False,
                         psize=get_archive_path_size(member, file_path.suffix),
-                        mtime_ns=get_modified_time(member, file_path.suffix, config.sortby)
+                        mtime_ns=get_modified_time(member, file_path.suffix, config.sortby),
+                        depth=(
+                            (file_path.depth, new_depth)
+                            if not isinstance(file_path.depth, tuple)
+                            else (file_path.depth[0], new_depth)
+                        )
                     )
 
                     if archive_should_skip(file_name, config):

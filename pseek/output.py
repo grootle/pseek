@@ -37,7 +37,7 @@ def build_highlight(text, matches):
     return ''.join(parts)
 
 
-def path_sort_key(data):
+def path_sort_key(data) -> tuple:
     if data.virtual_path:
         value = '::'.join(
             (
@@ -54,7 +54,7 @@ def path_sort_key(data):
     return os.path.normcase(value), value
 
 
-def modified_sort_key(data):
+def modified_sort_key(data) -> tuple:
     if data.virtual_path:
         key = data.virtual_path[-1].modified
     else:
@@ -63,6 +63,15 @@ def modified_sort_key(data):
     # False = 0, True = 1
     # None values ​​are placed at the end.
     return (key is None, key)
+
+
+def depth_sort_key(data) -> tuple:
+    if data.virtual_path:
+        key = data.virtual_path[-1].depth
+        return (key[0] is None, *key)
+    else:
+        key = data.path.depth
+        return (key is None, key)
 
 
 def sort_results(sortby: str, datas: list, match_type: str):
@@ -77,6 +86,8 @@ def sort_results(sortby: str, datas: list, match_type: str):
                 ))
         case 'modified':
             datas.sort(key=modified_sort_key)
+        case 'depth':
+            datas.sort(key=depth_sort_key)
         case _:
             pass
 
