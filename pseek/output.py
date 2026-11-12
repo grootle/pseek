@@ -65,6 +65,17 @@ def modified_sort_key(data) -> tuple:
     return (key is None, key)
 
 
+def accessed_sort_key(data) -> tuple:
+    if data.virtual_path:
+        key = data.virtual_path[-1].accessed
+    else:
+        key = data.path.accessed
+
+    # False = 0, True = 1
+    # None values ​​are placed at the end.
+    return (key is None, key)
+
+
 def depth_sort_key(data) -> tuple:
     if data.virtual_path:
         key = data.virtual_path[-1].depth
@@ -88,6 +99,8 @@ def sort_results(sortby: str, datas: list, match_type: str):
             datas.sort(key=modified_sort_key)
         case 'depth':
             datas.sort(key=depth_sort_key)
+        case 'accessed':
+            datas.sort(key=accessed_sort_key)
         case _:
             pass
 

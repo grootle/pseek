@@ -27,27 +27,51 @@ def get_archive_path_size(info, file_type: str) -> int:
         return info.size
 
 
-def get_modified_time(info, file_type: str, sort_type: str) -> int | None:
-    if sort_type != 'modified':
+def get_mod_or_acc_time(info, file_type: str, sort_type: str,
+                        requested_type: str = 'modified') -> int | None:
+    if sort_type != requested_type:
         return None
 
     if file_type == 'zip':
-        mtime = datetime(*info.date_time).timestamp()
-        mtime_ns = round(mtime * 1_000_000_000)
+        if requested_type == 'modified':
+            mtime = datetime(*info.date_time).timestamp()
+            time_ns = round(mtime * 1_000_000_000)
+        else:
+            time_ns = None
     elif file_type == 'rar':
-        mtime_ns = (
-            round(info.mtime.timestamp() * 1_000_000_000)
-            if info.mtime is not None else None
-        )
+        if requested_type == 'modified':
+            time_ns = (
+                round(info.mtime.timestamp() * 1_000_000_000)
+                if info.mtime is not None else None
+            )
+        else:
+            time_ns = (
+                round(info.atime.timestamp() * 1_000_000_000)
+                if info.atime is not None else None
+            )
     elif file_type == '7z':
-        timestamp = info.lastwritetime
+        properties = info.file_properties()
+
+        if requested_type == 'modified':
+            timestamp = properties.get('lastwritetime')
+        else:
+            timestamp = properties.get('lastaccesstime')
+
         if timestamp is None:
             return None
-        mtime_ns = round(timestamp.totimestamp() * 1_000_000_000)
-    elif file_type in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
-        mtime_ns = round(info.mtime * 1_000_000_000)
 
-    return mtime_ns
+        time_ns = round(timestamp.totimestamp() * 1_000_000_000)
+    elif file_type in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
+        if requested_type == 'modified':
+            time_ns = round(info.mtime * 1_000_000_000)
+        else:
+            atime_value = info.pax_headers.get('atime')
+            time_ns = (
+                round(float(atime_value) * 1_000_000_000)
+                if atime_value is not None else None
+            )
+
+    return time_ns
 
 
 def archive_should_skip(path_info: SysPath, config):
@@ -98,7 +122,13 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=not is_dir,
                         is_dir=is_dir,
                         psize=get_archive_path_size(info, file_path.suffix),
-                        mtime_ns=get_modified_time(info, file_path.suffix, config.sortby),
+                        mtime_ns=get_mod_or_acc_time(info, file_path.suffix, config.sortby),
+                        atime_ns=get_mod_or_acc_time(
+                            info,
+                            file_path.suffix,
+                            config.sortby,
+                            'accessed'
+                        ),
                         depth=(
                             (file_path.depth, new_depth)
                             if not isinstance(file_path.depth, tuple)
@@ -129,7 +159,13 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=not is_dir,
                         is_dir=is_dir,
                         psize=get_archive_path_size(info, '7z'),
-                        mtime_ns=get_modified_time(info, '7z', config.sortby),
+                        mtime_ns=get_mod_or_acc_time(info, '7z', config.sortby),
+                        atime_ns=get_mod_or_acc_time(
+                            info,
+                            '7z',
+                            config.sortby,
+                            'accessed'
+                        ),
                         depth=(
                             (file_path.depth, new_depth)
                             if not isinstance(file_path.depth, tuple)
@@ -173,7 +209,13 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=not is_dir,
                         is_dir=is_dir,
                         psize=get_archive_path_size(member, file_path.suffix),
-                        mtime_ns=get_modified_time(member, file_path.suffix, config.sortby),
+                        mtime_ns=get_mod_or_acc_time(member, file_path.suffix, config.sortby),
+                        atime_ns=get_mod_or_acc_time(
+                            member,
+                            file_path.suffix,
+                            config.sortby,
+                            'accessed'
+                        ),
                         depth=(
                             (file_path.depth, new_depth)
                             if not isinstance(file_path.depth, tuple)
@@ -237,7 +279,13 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=True,
                         is_dir=False,
                         psize=get_archive_path_size(info, file_path.suffix),
-                        mtime_ns=get_modified_time(info, file_path.suffix, config.sortby),
+                        mtime_ns=get_mod_or_acc_time(info, file_path.suffix, config.sortby),
+                        atime_ns=get_mod_or_acc_time(
+                            info,
+                            file_path.suffix,
+                            config.sortby,
+                            'accessed'
+                        ),
                         depth=(
                             (file_path.depth, new_depth)
                             if not isinstance(file_path.depth, tuple)
@@ -275,7 +323,13 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=True,
                         is_dir=False,
                         psize=get_archive_path_size(info, '7z'),
-                        mtime_ns=get_modified_time(info, '7z', config.sortby),
+                        mtime_ns=get_mod_or_acc_time(info, '7z', config.sortby),
+                        atime_ns=get_mod_or_acc_time(
+                            info,
+                            '7z',
+                            config.sortby,
+                            'accessed'
+                        ),
                         depth=(
                             (file_path.depth, new_depth)
                             if not isinstance(file_path.depth, tuple)
@@ -323,7 +377,13 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=True,
                         is_dir=False,
                         psize=get_archive_path_size(member, file_path.suffix),
-                        mtime_ns=get_modified_time(member, file_path.suffix, config.sortby),
+                        mtime_ns=get_mod_or_acc_time(member, file_path.suffix, config.sortby),
+                        atime_ns=get_mod_or_acc_time(
+                            member,
+                            file_path.suffix,
+                            config.sortby,
+                            'accessed'
+                        ),
                         depth=(
                             (file_path.depth, new_depth)
                             if not isinstance(file_path.depth, tuple)

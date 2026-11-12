@@ -111,32 +111,48 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
                         and not whitelisted
                     )
 
-                    # A symlink may be a valid filename-search candidate even
-                    # when its target is not followed or cannot be resolved.
-                    yield (
-                        SysPath(
-                            path=entry_path,
-                            is_file=entry.is_file(follow_symlinks=False) \
-                                if not is_symlink else True,
-                            is_dir=is_dir if not is_symlink else False,
-                            is_symlink=is_symlink,
-                            depth=new_depth
-                        ),
-                        metric_only
+                    entry_syspath = SysPath(
+                        path=entry_path,
+                        is_file=entry.is_file(follow_symlinks=False) \
+                            if not is_symlink else True,
+                        is_dir=is_dir if not is_symlink else False,
+                        is_symlink=is_symlink,
+                        depth=new_depth
                     )
 
+                    if config.sortby == 'accessed' and entry_syspath.is_dir:
+                        try:
+                            # Just to save accessed time before scanning dir.
+                            # Depending on file system settings,
+                            # scanning a dir may change st_atime_ns.
+                            entry_syspath.accessed
+                        except OSError:
+                            continue
+
+                    # A symlink may be a valid filename-search candidate even
+                    # when its target is not followed or cannot be resolved.
+                    yield (entry_syspath, metric_only)
+
                     if config.follow and is_symlink and is_symlink_valid(entry, is_symlink):
-                        yield (
-                            SysPath(
-                                # Follow and get the symlink target path
-                                path=entry_path.resolve(),
-                                is_file=entry.is_file(follow_symlinks=True),
-                                is_dir=is_dir,
-                                # Target of a symlink isn't a symlink
-                                is_symlink=False,
-                            ),
-                            False
+                        symlink_target = SysPath(
+                            # Follow and get the symlink target path
+                            path=entry_path.resolve(),
+                            is_file=entry.is_file(follow_symlinks=True),
+                            is_dir=is_dir,
+                            # Target of a symlink isn't a symlink
+                            is_symlink=False,
                         )
+
+                        if config.sortby == 'accessed' and symlink_target.is_dir:
+                            try:
+                                # Just to save accessed time before scanning dir.
+                                # Depending on file system settings,
+                                # scanning a dir may change st_atime_ns.
+                                symlink_target.accessed
+                            except OSError:
+                                continue
+
+                        yield (symlink_target, False)
 
                 if is_dir and should_descend and is_symlink_valid(entry, is_symlink) and \
                     any(new_depth < d[1] for d in config.depth):
@@ -173,30 +189,46 @@ def walk(config):
             is_dir = stat.S_ISDIR(st.st_mode)
             is_file = stat.S_ISREG(st.st_mode)
 
-            yield (
-                SysPath(
-                    path=root,
-                    is_file=is_file if not is_symlink else True,
-                    is_dir=is_dir if not is_symlink else False,
-                    is_symlink=is_symlink,
-                    lstat_result=st,
-                    depth=depth
-                ),
-                False
+            root_syspath = SysPath(
+                path=root,
+                is_file=is_file if not is_symlink else True,
+                is_dir=is_dir if not is_symlink else False,
+                is_symlink=is_symlink,
+                lstat_result=st,
+                depth=depth
             )
 
+            if config.sortby == 'accessed' and root_syspath.is_dir:
+                try:
+                    # Just to save accessed time before scanning dir.
+                    # Depending on file system settings,
+                    # scanning a dir may change st_atime_ns.
+                    root_syspath.accessed
+                except OSError:
+                    continue
+
+            yield (root_syspath, False)
+
             if config.follow and is_symlink and is_symlink_valid(root, is_symlink):
-                yield (
-                    SysPath(
-                        path=root.resolve(),
-                        # Path.is_file() and Path.is_dir() follow symlinks by default
-                        is_file=root.is_file(),
-                        is_dir=root.is_dir(),
-                        # Target of a symlink isn't a symlink
-                        is_symlink=False,
-                    ),
-                    False
+                symlink_target = SysPath(
+                    path=root.resolve(),
+                    # Path.is_file() and Path.is_dir() follow symlinks by default
+                    is_file=root.is_file(),
+                    is_dir=root.is_dir(),
+                    # Target of a symlink isn't a symlink
+                    is_symlink=False,
                 )
+
+                if config.sortby == 'accessed' and symlink_target.is_dir:
+                    try:
+                        # Just to save accessed time before scanning dir.
+                        # Depending on file system settings,
+                        # scanning a dir may change st_atime_ns.
+                        symlink_target.accessed
+                    except OSError:
+                        continue
+
+                yield (symlink_target, False)
 
         if root.is_dir() and any(depth < d[1] for d in config.depth):
             matcher = None

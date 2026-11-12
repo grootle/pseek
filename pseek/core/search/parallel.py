@@ -100,6 +100,16 @@ def process_candidate(item, config, pattern, binary_pattern,
     # Avoid empty files
     if config.content and not p.is_symlink \
         and p.is_file and p_size != 0:
+
+        if config.sortby == 'accessed':
+            try:
+                # Just to save accessed time before reading file.
+                # Depending on file system settings,
+                # reading a file may change st_atime_ns.
+                p.accessed
+            except OSError:
+                return
+
         search_content(
             config,
             matches,

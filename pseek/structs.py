@@ -245,6 +245,7 @@ class SysPath:
 
     psize: int | None = None
     mtime_ns: int | None = None
+    atime_ns: int | None = None
     depth: int | tuple | None = None
     lstat_result: os.stat_result | None = None
     _path_str: str | None = None
@@ -293,6 +294,16 @@ class SysPath:
                 return None
 
         return self.mtime_ns
+
+    @property
+    def accessed(self) -> int | None:
+        if self.atime_ns is None:
+            try:
+                self.atime_ns = self.get_lstat().st_atime_ns
+            except FileNotFoundError:
+                return None
+
+        return self.atime_ns
 
 
 @dataclass(slots=True)
