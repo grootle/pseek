@@ -193,9 +193,13 @@ def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str
 @click.option('--timeout', metavar='FLOAT',
               type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
-@click.option('--sort', 'sortby', metavar='SORTBY',
-              type=click.Choice(['none', 'path', 'size', 'modified', 'depth', 'accessed']),
-              default='none', show_default=True)
+@click.option(
+    '--sort', 'sortby', metavar='SORTBY',
+    type=click.Choice(
+        ['none', 'path', 'size', 'modified', 'depth', 'accessed', 'matches']
+    ),
+    default='none', show_default=True
+)
 @click.option('--threads', metavar='NUM', type=click.IntRange(min=0), default=0,
               help='This flag sets the approximate number of threads to use. '
               'A value of 0 (which is the default) causes pseek to choose the thread count using heuristics.')

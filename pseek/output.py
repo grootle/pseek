@@ -101,6 +101,13 @@ def sort_results(sortby: str, datas: list, match_type: str):
             datas.sort(key=depth_sort_key)
         case 'accessed':
             datas.sort(key=accessed_sort_key)
+        case 'matches':
+            if match_type == 'content':
+                datas.sort(key=lambda d: sum(
+                    len(line.matches)
+                    for group in d.groups
+                    for line in group.lines
+                ))
         case _:
             pass
 

@@ -189,25 +189,17 @@ def walk(config):
             is_dir = stat.S_ISDIR(st.st_mode)
             is_file = stat.S_ISREG(st.st_mode)
 
-            root_syspath = SysPath(
-                path=root,
-                is_file=is_file if not is_symlink else True,
-                is_dir=is_dir if not is_symlink else False,
-                is_symlink=is_symlink,
-                lstat_result=st,
-                depth=depth
+            yield (
+                SysPath(
+                    path=root,
+                    is_file=is_file if not is_symlink else True,
+                    is_dir=is_dir if not is_symlink else False,
+                    is_symlink=is_symlink,
+                    lstat_result=st,
+                    depth=depth
+                ),
+                False
             )
-
-            if config.sortby == 'accessed' and root_syspath.is_dir:
-                try:
-                    # Just to save accessed time before scanning dir.
-                    # Depending on file system settings,
-                    # scanning a dir may change st_atime_ns.
-                    root_syspath.accessed
-                except OSError:
-                    continue
-
-            yield (root_syspath, False)
 
             if config.follow and is_symlink and is_symlink_valid(root, is_symlink):
                 symlink_target = SysPath(

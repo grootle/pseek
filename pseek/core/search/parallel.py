@@ -50,9 +50,12 @@ def process_candidate(item, config, pattern, binary_pattern,
     p_size = None
 
     needs_size = (
-        (config.size and not p.is_dir)
-        or (config.content and p.is_file and not p.is_symlink)
-        or (config.sortby == 'size' and p.is_file)
+        p.is_file and (
+            config.size
+            or (config.content and not p.is_symlink)
+            or config.sortby == 'size'
+            or config.show_size
+        )
     )
 
     try:
