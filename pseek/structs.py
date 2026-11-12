@@ -244,6 +244,7 @@ class SysPath:
     is_symlink: bool = False
 
     psize: int | None = None
+    mtime_ns: int | None = None
     lstat_result: os.stat_result | None = None
     _path_str: str | None = None
     _ext: str | None = None
@@ -281,6 +282,16 @@ class SysPath:
             self.psize = self.get_lstat().st_size
 
         return self.psize
+
+    @property
+    def modified(self) -> int | None:
+        if self.mtime_ns is None:
+            try:
+                self.mtime_ns = self.get_lstat().st_mtime_ns
+            except FileNotFoundError:
+                return None
+
+        return self.mtime_ns
 
 
 @dataclass(slots=True)

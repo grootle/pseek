@@ -54,11 +54,15 @@ def path_sort_key(data):
     return os.path.normcase(value), value
 
 
-def size_sort_key(data):
+def modified_sort_key(data):
     if data.virtual_path:
-        return data.virtual_path[-1].size
+        key = data.virtual_path[-1].modified
     else:
-        return data.path.size
+        key = data.path.modified
+
+    # False = 0, True = 1
+    # None values ​​are placed at the end.
+    return (key is None, key)
 
 
 def sort_results(sortby: str, datas: list, match_type: str):
@@ -67,7 +71,12 @@ def sort_results(sortby: str, datas: list, match_type: str):
             datas.sort(key=path_sort_key)
         case 'size':
             if match_type != 'directory':
-                datas.sort(key=size_sort_key)
+                datas.sort(key=lambda d: (
+                    d.virtual_path[-1].size
+                    if d.virtual_path else d.path.size
+                ))
+        case 'modified':
+            datas.sort(key=modified_sort_key)
         case _:
             pass
 

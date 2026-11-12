@@ -3,16 +3,15 @@ import gzip
 import io
 import lzma
 import tarfile
-
-# Archive modules
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import py7zr
 import rarfile
 
 from ..structs import SysPath
-from ..utils import get_path_suffix, is_binary
+from ..utils import is_binary
 
 # Archive extensions that are allowed
 ARCHIVE_EXTS = ('zip', 'rar', '7z', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'gz', 'bz2', 'xz')
@@ -26,6 +25,29 @@ def get_archive_path_size(info, file_type: str) -> int:
         return info.uncompressed
     elif file_type in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
         return info.size
+
+
+def get_modified_time(info, file_type: str, sort_type: str) -> int | None:
+    if sort_type != 'modified':
+        return None
+
+    if file_type == 'zip':
+        mtime = datetime(*info.date_time).timestamp()
+        mtime_ns = round(mtime * 1_000_000_000)
+    elif file_type == 'rar':
+        mtime_ns = (
+            round(info.mtime.timestamp() * 1_000_000_000)
+            if info.mtime is not None else None
+        )
+    elif file_type == '7z':
+        timestamp = info.lastwritetime
+        if timestamp is None:
+            return None
+        mtime_ns = round(timestamp.totimestamp() * 1_000_000_000)
+    elif file_type in ('tar', 'tar.gz', 'tar.bz2', 'tar.xz'):
+        mtime_ns = round(info.mtime * 1_000_000_000)
+
+    return mtime_ns
 
 
 def archive_should_skip(path_info: SysPath, config):
@@ -75,7 +97,8 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         path=Path(info.filename),
                         is_file=not is_dir,
                         is_dir=is_dir,
-                        psize=get_archive_path_size(info, file_path.suffix)
+                        psize=get_archive_path_size(info, file_path.suffix),
+                        mtime_ns=get_modified_time(info, file_path.suffix, config.sortby)
                     )
 
                     if not archive_should_skip(name, config):
@@ -94,20 +117,23 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
         # Handle 7Z archives
         elif file_path.suffix == '7z':
             with py7zr.SevenZipFile(file_stream, mode='r') as z:
-                for info in z.list():
+                for info in z.files:
                     is_dir = info.is_directory
                     name = SysPath(
                         path=Path(info.filename),
                         is_file=not is_dir,
                         is_dir=is_dir,
-                        psize=get_archive_path_size(info, '7z')
+                        psize=get_archive_path_size(info, '7z'),
+                        mtime_ns=get_modified_time(info, '7z', config.sortby)
                     )
 
                     if not archive_should_skip(name, config):
                         if any(mi <= new_depth <= ma for mi, ma in config.arc_depth):
                             yield label_prefix, name
 
-                        if name.suffix in ARCHIVE_EXTS[:-3] and any(new_depth < d[1] for d in config.arc_depth):
+                        if name.suffix in ARCHIVE_EXTS[:-3] and any(
+                            new_depth < d[1] for d in config.arc_depth
+                        ):
                             file_data = z.read([info.filename]).get(info.filename)
                             if file_data is None:
                                 continue
@@ -136,7 +162,8 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         path=Path(member.name),
                         is_file=not is_dir,
                         is_dir=is_dir,
-                        psize=get_archive_path_size(member, file_path.suffix)
+                        psize=get_archive_path_size(member, file_path.suffix),
+                        mtime_ns=get_modified_time(member, file_path.suffix, config.sortby)
                     )
 
                     if not archive_should_skip(name, config):
@@ -194,7 +221,8 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         path=Path(info.filename),
                         is_file=True,
                         is_dir=False,
-                        psize=get_archive_path_size(info, file_path.suffix)
+                        psize=get_archive_path_size(info, file_path.suffix),
+                        mtime_ns=get_modified_time(info, file_path.suffix, config.sortby)
                     )
 
                     if archive_should_skip(file_name, config):
@@ -217,25 +245,26 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         yield [*label_prefix, file_name], data
         # Handle 7Z archives
         elif file_path.suffix == '7z':
-            with py7zr.SevenZipFile(file_stream, mode='r') as archive:
-                for info in archive.list():
+            with py7zr.SevenZipFile(file_stream, mode='r') as z:
+                for info in z.files:
                     if info.is_directory:
-                        continue
-                    
-                    file_data = archive.read([info.filename]).get(info.filename)
-                    if file_data is None:
                         continue
 
                     file_name = SysPath(
                         path=Path(info.filename),
                         is_file=True,
                         is_dir=False,
-                        psize=get_archive_path_size(info, '7z')
+                        psize=get_archive_path_size(info, '7z'),
+                        mtime_ns=get_modified_time(info, '7z', config.sortby)
                     )
 
                     if archive_should_skip(file_name, config):
                         continue
-                    
+
+                    file_data = z.read([info.filename]).get(info.filename)
+                    if file_data is None:
+                        continue
+
                     head = file_data.read(8192)
                     if is_binary(head) and file_name.suffix not in ARCHIVE_EXTS:
                         continue
@@ -268,7 +297,8 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         path=Path(member.name),
                         is_file=True,
                         is_dir=False,
-                        psize=get_archive_path_size(member, file_path.suffix)
+                        psize=get_archive_path_size(member, file_path.suffix),
+                        mtime_ns=get_modified_time(member, file_path.suffix, config.sortby)
                     )
 
                     if archive_should_skip(file_name, config):
