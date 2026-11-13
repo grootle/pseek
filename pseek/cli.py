@@ -196,7 +196,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str
 @click.option(
     '--sort', 'sortby', metavar='SORTBY',
     type=click.Choice(
-        ['none', 'path', 'size', 'modified', 'depth', 'accessed', 'matches']
+        ['none', 'path', 'size', 'modified', 'depth', 'accessed', 'matches', 'natpath']
     ),
     default='none', show_default=True
 )

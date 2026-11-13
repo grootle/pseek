@@ -1,6 +1,6 @@
-import os
-
 import click
+
+from .sorting import sort_results
 
 
 def merge_matches(matches: list[tuple[int, int]]):
@@ -35,81 +35,6 @@ def build_highlight(text, matches):
     parts.append(text[last:])
 
     return ''.join(parts)
-
-
-def path_sort_key(data) -> tuple:
-    if data.virtual_path:
-        value = '::'.join(
-            (
-                data.path,
-                *data.virtual_path[:-1],
-                data.virtual_path[-1].string
-            )
-        )
-    else:
-        value = data.path.string
-    # Normalize case on case-insensitive platforms.
-    # If the normcase paths are identical,
-    # use the original value for comparison.
-    return os.path.normcase(value), value
-
-
-def modified_sort_key(data) -> tuple:
-    if data.virtual_path:
-        key = data.virtual_path[-1].modified
-    else:
-        key = data.path.modified
-
-    # False = 0, True = 1
-    # None values ​​are placed at the end.
-    return (key is None, key)
-
-
-def accessed_sort_key(data) -> tuple:
-    if data.virtual_path:
-        key = data.virtual_path[-1].accessed
-    else:
-        key = data.path.accessed
-
-    # False = 0, True = 1
-    # None values ​​are placed at the end.
-    return (key is None, key)
-
-
-def depth_sort_key(data) -> tuple:
-    if data.virtual_path:
-        key = data.virtual_path[-1].depth
-        return (key[0] is None, *key)
-    else:
-        key = data.path.depth
-        return (key is None, key)
-
-
-def sort_results(sortby: str, datas: list, match_type: str):
-    match sortby:
-        case 'path':
-            datas.sort(key=path_sort_key)
-        case 'size':
-            if match_type != 'directory':
-                datas.sort(key=lambda d: (
-                    d.virtual_path[-1].size
-                    if d.virtual_path else d.path.size
-                ))
-        case 'modified':
-            datas.sort(key=modified_sort_key)
-        case 'depth':
-            datas.sort(key=depth_sort_key)
-        case 'accessed':
-            datas.sort(key=accessed_sort_key)
-        case 'matches':
-            if match_type == 'content':
-                datas.sort(key=lambda d: sum(
-                    len(line.matches)
-                    for group in d.groups
-                    for line in group.lines
-                ))
-        case _:
-            pass
 
 
 def convert_size(size_bytes: int) -> str:
