@@ -61,7 +61,7 @@ def path_key(path: Path) -> tuple:
     )
 
 
-def natpath_sort_key(data) -> tuple:
+def natpath_sort_key(data, rev: bool) -> tuple:
     """ Create a natural sort key for filesystem and nested archive paths """
 
     # Keep filesystem and archive path levels separate.
@@ -81,7 +81,7 @@ def natpath_sort_key(data) -> tuple:
     return natural_key
 
 
-def path_sort_key(data) -> tuple:
+def path_sort_key(data, rev: bool) -> tuple:
     original_path = (
         getattr(data.path, 'string', data.path),
         *(
@@ -100,7 +100,7 @@ def path_sort_key(data) -> tuple:
     return normalized_path, original_path
 
 
-def modified_sort_key(data) -> tuple:
+def modified_sort_key(data, rev: bool) -> tuple:
     if data.virtual_path:
         key = data.virtual_path[-1].modified
     else:
@@ -108,10 +108,11 @@ def modified_sort_key(data) -> tuple:
 
     # False = 0, True = 1
     # None values ​​are placed at the end.
-    return (key is None, key)
+    # Use xor operator to ensure that None values ​​always appear at end.
+    return ((key is None) ^ rev, key)
 
 
-def accessed_sort_key(data) -> tuple:
+def accessed_sort_key(data, rev: bool) -> tuple:
     if data.virtual_path:
         key = data.virtual_path[-1].accessed
     else:
@@ -119,19 +120,21 @@ def accessed_sort_key(data) -> tuple:
 
     # False = 0, True = 1
     # None values ​​are placed at the end.
-    return (key is None, key)
+    # Use xor operator to ensure that None values ​​always appear at end.
+    return ((key is None) ^ rev, key)
 
 
-def depth_sort_key(data) -> tuple:
+def depth_sort_key(data, rev: bool) -> tuple:
+    # Use xor operator to ensure that None values ​​always appear at end.
     if data.virtual_path:
         key = data.virtual_path[-1].depth
-        return (key[0] is None, *key)
+        return ((key[0] is None) ^ rev, *key)
     else:
         key = data.path.depth
-        return (key is None, key, -1)
+        return ((key is None) ^ rev, key, -1)
 
 
-def size_sort_key(data) -> int:
+def size_sort_key(data, rev: bool) -> int:
     return (
         data.virtual_path[-1].size
         if data.virtual_path
@@ -139,7 +142,7 @@ def size_sort_key(data) -> int:
     )
 
 
-def matches_sort_key(data) -> int:
+def matches_sort_key(data, rev: bool) -> int:
     return sum(
         len(line.matches)
         for group in data.groups
@@ -158,7 +161,8 @@ SORT_KEYS = {
 }
 
 
-def sort_results(sortby: tuple, datas: list, match_type: str):
+def sort_results(sortby: tuple, need_reverse: bool,
+                 datas: list, match_type: str):
     if set(sortby) == {'none'}:
         return
 
@@ -187,6 +191,7 @@ def sort_results(sortby: tuple, datas: list, match_type: str):
 
     datas.sort(
         key=lambda data: tuple(
-            key(data) for key in key_functions
-        )
+            key(data, need_reverse) for key in key_functions
+        ),
+        reverse=need_reverse
     )

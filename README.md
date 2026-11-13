@@ -69,6 +69,7 @@ Fast and powerful command-line search tool for finding files, directories, and t
         * [Result Statistics](#result-statistics)
         * [Search Statistics](#search-statistics)
         * [Search time](#search-time)
+    * [Sorting Results](#sorting-results)
 * [Requirements](#requirements)
 
 ## Features
@@ -218,6 +219,8 @@ psk --exclude build
 | `--stats` | Show search statistics including result counts and search time |
 | `--threads` | This flag sets the approximate number of threads to use. A value of 0 (which is the default) causes pseek to choose the thread count using heuristics |
 | `--show-size` | Show file sizes next to their paths. Since calculating the size of directories is time-consuming, their sizes are not displayed. Sizes use binary (IEC) prefixes — KiB, MiB, GiB — not decimal (KB, MB, GB) |
+| `--sort` | This option enables sorting of results in ascending order. The possible values for this option are: none, path, size, modified, depth, accessed, matches, natpath. Multiple values can be used simultaneously: --sort depth --sort modified. The results are sorted first by depth, and in the event that the depths are identical, then by modified. Use --sort-rev flag for descending order. For more details about this option and how different values function, see [sorting results section](#sorting-results) |
+| `--sort-rev` | Sets the sort order for the `--sort` option to descending. This option is just a flag. You still need to use `--sort` to specify the sort type |
 
 ## Specifying the Root Directory
 
@@ -1012,6 +1015,98 @@ When `--archive` is enabled, file and directory statistics can also include path
 Time spent performing the search.
 
 When `--timeout` is used, the statistics represent the work completed before the timeout.
+
+### Sorting Results
+
+The `--sort` option sorts search results in ascending order. It supports multiple values, allowing you to combine different sorting criteria.
+
+Use the option multiple times to specify the desired order of criteria:
+
+```bash
+pseek --sort depth --sort modified
+```
+
+Results are sorted by depth first. If two or more results have the same depth, their modification times are used as secondary criteria. The order in which criteria are specified determines their priority.
+
+By default, sorting is disabled (`none`). Without explicit sorting, results are returned in their natural discovery order. Since search processing is parallel, this order is not guaranteed and may vary between runs (Unless you use `--threads 1`).
+
+Use `--sort-rev` to reverse the sorting order (descending):
+
+```bash
+pseek --sort size --sort modified --sort-rev
+```
+
+Missing values (`None`) are always placed at the end, regardless of the sorting direction.
+
+Sorting does not disable parallel search. Results are collected first and sorted afterward. Sorting adds some processing overhead, generally proportional to **O(n log n)**, where `n` is the number of results.
+
+#### Available Sorting Criteria
+
+| Option | Description |
+|---|---|
+| `none` | Disables sorting. This is the default behavior. |
+| `path` | Sorts by the full path using lexicographical ordering. Relative paths are used by default; absolute paths are used when `--absolute-path` is enabled. Numeric portions are treated as ordinary characters, so `file10.txt` comes before `file2.txt`. |
+| `size` | Sorts files by their size in bytes. Directories are not sorted by size and retain their existing order unless another applicable sorting criterion is specified. |
+| `modified` | Sorts by the last modification time. For directories, this refers to the directory itself, not its contents. Archive entries may have unavailable timestamps and are placed at the end. |
+| `depth` | Sorts by path depth. Symbolic link targets have no depth value and are placed at the end. Archive depth follows archive nesting rather than filesystem directory depth. Nested archive levels are considered when sorting entries within archives. |
+| `accessed` | Sorts by the last access time. Directory access time generally reflects when the directory's contents were last listed or read, not when one of its files was accessed. Some files and archive entries may not provide this information. |
+| `matches` | Sorts content search results by the total number of matches. This criterion only affects content results, not file or directory results. When match positions are unavailable, results cannot be distinguished by this criterion and retain their existing relative order. |
+| `natpath` | Sorts by the full path using natural ordering instead of lexicographical ordering. It recognizes integer sequences, so `file2.txt` comes before `file10.txt`. See the details below. |
+
+#### Natural Path Sorting (`natpath`)
+
+Unlike regular `path` sorting, `natpath` recognizes numbers within path components and compares them numerically rather than lexicographically.
+
+For example:
+
+```text
+file1.txt
+file2.txt
+file3.txt
+file10.txt
+file20.txt
+```
+
+Natural path sorting also provides the following features:
+
+- **Leading zeros:** Numerically equivalent values are grouped together, with shorter representations appearing first. For example: `file1`, `file01`, `file001`.
+- **Case-insensitive:** Uppercase and lowercase letters are treated as equivalent during comparison.
+- **Unicode normalization:** Canonically equivalent Unicode characters are normalized before comparison.
+- **Unicode decimal digits:** Decimal digits from different writing systems are recognized and compared numerically. For example, the Persian digit `۵` is treated as the number `5`.
+
+#### Examples
+
+Sort by path, then by modification time:
+
+```bash
+pseek --sort path --sort modified
+```
+
+Sort by size in descending order:
+
+```bash
+pseek --sort size --sort-rev
+```
+
+Sort by depth, then by path, then by access time:
+
+```bash
+pseek --sort depth --sort path --sort accessed
+```
+
+Use natural path sorting:
+
+```bash
+pseek --sort natpath
+```
+
+Use natural path sorting followed by descending modification time:
+
+```bash
+pseek --sort natpath --sort modified --sort-rev
+```
+
+> **Note:** Access times depend on filesystem and operating system behavior. Filesystems may restrict or skip access-time updates through options such as `relatime`, `noatime`, or `nodiratime`. Consequently, access-time sorting may not always reflect the exact time of the most recent access. This behavior is determined by the filesystem, not by `pseek`.
 
 ## Requirements
 

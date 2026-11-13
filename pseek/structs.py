@@ -172,6 +172,7 @@ class SearchConfig:
     context: tuple[int, int]
     threads: int
     sortby: tuple[str, ...]
+    sort_rev: bool
     show_size: bool
     
     def __post_init__(self):

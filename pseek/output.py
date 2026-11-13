@@ -72,7 +72,7 @@ def echo(results: dict, config):
     """Display results with a specific format and color scheme"""
     for match_type, datas in results.items():
         if datas:
-            sort_results(config.sortby, datas, match_type)
+            sort_results(config.sortby, config.sort_rev, datas, match_type)
 
             RESULT_TITLES = {
                 "file": "Files",

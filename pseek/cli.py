@@ -198,10 +198,21 @@ def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str
     type=click.Choice(
         ['none', 'path', 'size', 'modified', 'depth', 'accessed', 'matches', 'natpath']
     ),
-    multiple=True, default=('none',), show_default=True
+    multiple=True, default=('none',), show_default=True,
+    help='This option enables sorting of results in ascending order. '
+    'The possible values for this option are: '
+    'none, path, size, modified, depth, accessed, matches, natpath.\n\n'
+    'Multiple values can be used simultaneously: --sort depth --sort modified. '
+    'The results are sorted first by depth, and in the event that the depths are identical, '
+    'then by modified.\n\nUse --sort-rev flag for descending order.\n\n'
+    'For more details about this option and how different values function, '
+    'please refer to README.'
 )
+@click.option('--sort-rev', is_flag=True,
+              help='Sets the sort order for the --sort option to descending. '
+              'This option is just a flag. You still need to use --sort to specify the sort type.')
 @click.option('--threads', metavar='NUM', type=click.IntRange(min=0), default=0,
-              help='This flag sets the approximate number of threads to use. '
+              help='This option sets the approximate number of threads to use. '
               'A value of 0 (which is the default) causes pseek to choose the thread count using heuristics.')
 def search(**kwargs):
     """Search for files, directories, and file content based on the query."""
