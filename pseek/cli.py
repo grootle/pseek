@@ -198,7 +198,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str
     type=click.Choice(
         ['none', 'path', 'size', 'modified', 'depth', 'accessed', 'matches', 'natpath']
     ),
-    default='none', show_default=True
+    multiple=True, default=('none',), show_default=True
 )
 @click.option('--threads', metavar='NUM', type=click.IntRange(min=0), default=0,
               help='This flag sets the approximate number of threads to use. '

@@ -53,7 +53,7 @@ def process_candidate(item, config, pattern, binary_pattern,
         p.is_file and (
             config.size
             or (config.content and not p.is_symlink)
-            or config.sortby == 'size'
+            or 'size' in config.sortby
             or config.show_size
         )
     )
@@ -104,7 +104,7 @@ def process_candidate(item, config, pattern, binary_pattern,
     if config.content and not p.is_symlink \
         and p.is_file and p_size != 0:
 
-        if config.sortby == 'accessed':
+        if 'accessed' in config.sortby:
             try:
                 # Just to save accessed time before reading file.
                 # Depending on file system settings,

@@ -171,7 +171,7 @@ class SearchConfig:
     stats: bool
     context: tuple[int, int]
     threads: int
-    sortby: str
+    sortby: tuple[str, ...]
     show_size: bool
     
     def __post_init__(self):

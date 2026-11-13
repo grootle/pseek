@@ -27,9 +27,9 @@ def get_archive_path_size(info, file_type: str) -> int:
         return info.size
 
 
-def get_mod_or_acc_time(info, file_type: str, sort_type: str,
+def get_mod_or_acc_time(info, file_type: str, sort_type: tuple,
                         requested_type: str = 'modified') -> int | None:
-    if sort_type != requested_type:
+    if requested_type not in sort_type:
         return None
 
     if file_type == 'zip':

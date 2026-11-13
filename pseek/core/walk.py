@@ -120,7 +120,7 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
                         depth=new_depth
                     )
 
-                    if config.sortby == 'accessed' and entry_syspath.is_dir:
+                    if 'accessed' in config.sortby and entry_syspath.is_dir:
                         try:
                             # Just to save accessed time before scanning dir.
                             # Depending on file system settings,
@@ -143,7 +143,7 @@ def walk_logic(path: Path, config, depth: int, matcher, ancestors: set):
                             is_symlink=False,
                         )
 
-                        if config.sortby == 'accessed' and symlink_target.is_dir:
+                        if 'accessed' in config.sortby and symlink_target.is_dir:
                             try:
                                 # Just to save accessed time before scanning dir.
                                 # Depending on file system settings,
@@ -211,7 +211,7 @@ def walk(config):
                     is_symlink=False,
                 )
 
-                if config.sortby == 'accessed' and symlink_target.is_dir:
+                if 'accessed' in config.sortby and symlink_target.is_dir:
                     try:
                         # Just to save accessed time before scanning dir.
                         # Depending on file system settings,

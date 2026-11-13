@@ -3,6 +3,8 @@ import re
 import unicodedata
 from pathlib import Path
 
+from click import BadParameter
+
 _DIGIT_PATTERN = re.compile(r'(\d+)')
 
 
@@ -76,16 +78,7 @@ def natpath_sort_key(data) -> tuple:
         )
     )
 
-    # Preserve deterministic ordering for equal natural keys.
-    original_path = (
-        getattr(data.path, 'string', data.path),
-        *(
-            getattr(path, 'string', path)
-            for path in data.virtual_path
-        )
-    )
-
-    return natural_key, original_path
+    return natural_key
 
 
 def path_sort_key(data) -> tuple:
@@ -135,33 +128,65 @@ def depth_sort_key(data) -> tuple:
         return (key[0] is None, *key)
     else:
         key = data.path.depth
-        return (key is None, key)
+        return (key is None, key, -1)
 
 
-def sort_results(sortby: str, datas: list, match_type: str):
-    match sortby:
-        case 'path':
-            datas.sort(key=path_sort_key)
-        case 'size':
-            if match_type != 'directory':
-                datas.sort(key=lambda d: (
-                    d.virtual_path[-1].size
-                    if d.virtual_path else d.path.size
-                ))
-        case 'modified':
-            datas.sort(key=modified_sort_key)
-        case 'depth':
-            datas.sort(key=depth_sort_key)
-        case 'accessed':
-            datas.sort(key=accessed_sort_key)
-        case 'matches':
-            if match_type == 'content':
-                datas.sort(key=lambda d: sum(
-                    len(line.matches)
-                    for group in d.groups
-                    for line in group.lines
-                ))
-        case 'natpath':
-            datas.sort(key=natpath_sort_key)
-        case _:
-            pass
+def size_sort_key(data) -> int:
+    return (
+        data.virtual_path[-1].size
+        if data.virtual_path
+        else data.path.size
+    )
+
+
+def matches_sort_key(data) -> int:
+    return sum(
+        len(line.matches)
+        for group in data.groups
+        for line in group.lines
+    )
+
+
+SORT_KEYS = {
+    'path': path_sort_key,
+    'size': size_sort_key,
+    'modified': modified_sort_key,
+    'accessed': accessed_sort_key,
+    'depth': depth_sort_key,
+    'matches': matches_sort_key,
+    'natpath': natpath_sort_key,
+}
+
+
+def sort_results(sortby: tuple, datas: list, match_type: str):
+    if set(sortby) == {'none'}:
+        return
+
+    if 'none' in sortby:
+        raise BadParameter(
+            "'none' cannot be combined with other sort options",
+            param_hint='--sort',
+        )
+
+    key_functions = []
+
+    # Use dict.fromkeys() to preserve order.
+    for name in dict.fromkeys(sortby):
+        # Size is not applicable to directories.
+        if name == 'size' and match_type == 'directory':
+            continue
+
+        # Match count is only applicable to content results.
+        if name == 'matches' and match_type != 'content':
+            continue
+
+        key_functions.append(SORT_KEYS[name])
+
+    if not key_functions:
+        return
+
+    datas.sort(
+        key=lambda data: tuple(
+            key(data) for key in key_functions
+        )
+    )
