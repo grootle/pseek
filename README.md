@@ -95,8 +95,6 @@ Fast and powerful command-line search tool for finding files, directories, and t
 
 ## Installation
 
-> **Note:** Pseek includes a native Rust extension. Currently, pre-built wheels are provided for Linux only. If you are installing Pseek on another platform, [Rust and Cargo](https://rust-lang.org/) must be installed so the extension can be built locally.
-
 ### Install from PyPI (Recommended)
 
 ```bash

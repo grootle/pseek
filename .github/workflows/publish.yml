@@ -5,17 +5,22 @@ on:
     branches:
       - main
 
-jobs:
-  publish:
+# Prevent two publishing workflows from running concurrently.
+concurrency:
+  group: pseek-pypi-publish
+  cancel-in-progress: false
 
+permissions:
+  contents: read
+
+jobs:
+
+  # Check whether the package version should be published.
+  check-version:
     runs-on: ubuntu-latest
 
-    concurrency:
-      group: pseek-pypi-publish
-      cancel-in-progress: false
-
-    permissions:
-      contents: read
+    outputs:
+      publish: ${{ steps.check.outputs.publish }}
 
     steps:
 
@@ -29,29 +34,120 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install build packaging
+          python -m pip install --upgrade pip packaging
 
       - name: Check package version
         id: check
         run: python scripts/check_version.py
 
-      # Build the source distribution separately
-      - name: Build source distribution
-        if: steps.check.outputs.publish == 'true'
-        run: python -m build --sdist
 
-      # Build a PyPI-compatible Linux wheel in a manylinux container
-      - name: Build Linux wheel
-        if: steps.check.outputs.publish == 'true'
+  # Build wheels for multiple operating systems and architectures.
+  build-wheels:
+    needs: check-version
+    if: needs.check-version.outputs.publish == 'true'
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64
+            platform: linux-x86_64
+            manylinux: "2_28"
+
+          # Linux ARM64
+          - os: ubuntu-latest
+            target: aarch64
+            platform: linux-aarch64
+            manylinux: "2_28"
+
+          # Windows x86_64
+          - os: windows-latest
+            target: x64
+            platform: windows-x86_64
+            manylinux: auto
+
+          # macOS Intel
+          - os: macos-15-intel
+            target: x86_64
+            platform: macos-x86_64
+            manylinux: auto
+
+          # macOS Apple Silicon
+          - os: macos-latest
+            target: aarch64
+            platform: macos-aarch64
+            manylinux: auto
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
-          command: build
-          manylinux: "2_28"
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
           args: --release --out dist --compatibility pypi
+          sccache: true
+
+      # Each runner uploads its wheels as a separate artifact.
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.platform }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+
+  # Collect all wheels, build the source distribution and publish.
+  publish:
+    needs:
+      - check-version
+      - build-wheels
+
+    if: needs.check-version.outputs.publish == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip build
+
+      # Download wheels produced by all platform jobs.
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      # Build the source distribution separately.
+      - name: Build source distribution
+        run: python -m build --sdist --outdir dist
 
       - name: Publish to PyPI
-        if: steps.check.outputs.publish == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
