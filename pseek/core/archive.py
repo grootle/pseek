@@ -28,8 +28,11 @@ def get_archive_path_size(info, file_type: str) -> int:
 
 
 def get_mod_or_acc_time(info, file_type: str, sort_type: tuple,
-                        details: bool, requested_type: str = 'modified') -> int | None:
-    if requested_type not in sort_type and not details:
+                        details: tuple, requested_type: str = 'modified') -> int | None:
+    if (
+        requested_type not in sort_type
+        and requested_type not in details
+    ):
         return None
 
     if file_type == 'zip':

@@ -83,35 +83,42 @@ def format_timestamp(timestamp_ns: int | None) -> str:
         return '—'
 
 
-def create_details(p, need_details: bool, match_count: int | None = None) -> str:
-    if not need_details:
+def create_details(p, details_list: tuple, match_count: int | None = None) -> str:
+    if not details_list:
         return ''
 
-    size = (
-        convert_size(p.size)
-        if p.is_file and p.size is not None
-        else '—'
-    )
+    details = {}
 
-    modified = format_timestamp(p.modified)
-    accessed = format_timestamp(p.accessed)
-
-    depth = '—' if p.depth is None else p.depth
-
-    matches = (
-        match_count
-        if match_count is not None
-        else '—'
-    )
+    for d in details_list:
+        match d:
+            case 'size':
+                size = (
+                    convert_size(p.size)
+                    if p.is_file and p.size is not None
+                    else '—'
+                )
+                details.update({'Size': size})
+            case 'modified':
+                details.update(
+                    {'Modified': format_timestamp(p.modified)}
+                )
+            case 'accessed':
+                details.update(
+                    {'Accessed': format_timestamp(p.accessed)}
+                )
+            case 'depth':
+                details.update(
+                    {'Depth': '—' if p.depth is None else p.depth}
+                )
+            case 'matches':
+                matches = (
+                    match_count
+                    if match_count is not None
+                    else '—'
+                )
+                details.update({'Matches': matches})
 
     separator = click.style(' | ', fg='bright_black')
-    details = {
-        'Size': size,
-        'Modified': modified,
-        'Accessed': accessed,
-        'Depth': depth,
-        'Matches': matches
-    }
     output = (
         '    '
         + click.style('[', fg='cyan', dim=True)

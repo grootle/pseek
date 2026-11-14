@@ -220,7 +220,7 @@ psk --exclude build
 | `--threads` | This flag sets the approximate number of threads to use. A value of 0 (which is the default) causes pseek to choose the thread count using heuristics |
 | `--sort` | This option enables sorting of results in ascending order. The possible values for this option are: none, path, size, modified, depth, accessed, matches, natpath. Multiple values can be used simultaneously: --sort depth --sort modified. The results are sorted first by depth, and in the event that the depths are identical, then by modified. Use --sort-rev flag for descending order. For more details about this option and how different values function, see [sorting results section](#sorting-results) |
 | `--sort-rev` | Sets the sort order for the `--sort` option to descending. This option is just a flag. You still need to use `--sort` to specify the sort type |
-| `--details` | Show path metadata—including size, modification date, access date, path depth, and matches number—next to the path. Values that are unknown are represented by — |
+| `--details` | Show metadata next to result paths. If used without a value, all metadata fields are displayed. Available fields: size, modified, accessed, depth, matches. This option can be repeated to select multiple fields |
 
 ## Specifying the Root Directory
 
@@ -1085,25 +1085,63 @@ pseek --sort natpath --sort modified --sort-rev
 
 ### Details
 
-Display additional metadata next to each result path, including file size, modification time, access time, path depth, and the number of content matches.
+Display additional metadata next to result paths. This option accepts an optional field name and can be repeated to select multiple fields.
 
-**Example:**
+- **Without this option:** No additional metadata is displayed.
+- **`--details` without a value:** Displays all available metadata fields.
+- **`--details FIELD`:** Displays only the specified field.
+- **Multiple values:** Repeat the option to display multiple selected fields.
 
-```text
-pseek/cli.py    [Size: 12 KiB | Modified: 2026-09-10 20:45:31 | Accessed: 2026-11-15 00:46:05 | Depth: 1 | Matches: 5]
+Available fields:
+
+| Field | Description |
+|---|---|
+| `size` | File size. Directory sizes are omitted because calculating their total size requires scanning their contents. Uses binary (IEC) units such as KiB, MiB, and GiB (1 KiB = 1,024 bytes). |
+| `modified` | Last modification time of the file or directory itself, displayed in the system's local time zone. |
+| `accessed` | Last recorded access time. For directories, this generally refers to when their contents were last listed or read. |
+| `depth` | Path depth. For archive entries, displayed as `(archive_depth, entry_depth)`, representing the containing archive's filesystem depth and the entry's depth within the archive hierarchy, respectively. |
+| `matches` | Number of recorded content matches. Only applicable to content search results. |
+
+**Examples:**
+
+Display all metadata fields:
+
+```bash
+pseek query --details
 ```
 
-The displayed information follows these rules:
+Display only file sizes:
 
-- **Size:** Displayed only for files. Directory sizes are omitted because calculating the total size of a directory requires scanning its contents, which can be time-consuming. Sizes use binary (IEC) units, such as KiB, MiB, and GiB (1 KiB = 1,024 bytes).
-- **Modified:** The last modification time of the file or directory itself, not the modification time of its contents. Timestamps are displayed in the system's local time zone.
-- **Accessed:** The last recorded access time. For directories, this generally refers to the last time their contents were listed or read, not when an individual file inside them was accessed. Access times may be unavailable or inaccurate depending on filesystem settings, such as `relatime`, `noatime`, or `nodiratime`.
-- **Depth:** The path depth within the filesystem, displayed as an integer. For archive entries, depth is represented as a tuple `(archive_depth, entry_depth)`. The first value indicates the depth of the containing archive in the filesystem, while the second represents the entry's depth within the archive hierarchy, including nested archives.
-- **Matches:** Displays the number of recorded content matches for content search results only. It is not applicable to file and directory name searches. A value of `0` indicate that match positions were not calculated, such as when using `--path-only` or fuzzy search.
+```bash
+pseek query --details size
+```
 
-Values that are unavailable or not applicable are displayed as `—`.
+Display file sizes and modification times:
 
-For archive entries, metadata availability depends on the archive format and the information stored when the archive was created. Consequently, some timestamp values may be unavailable.
+```bash
+pseek query --details size --details modified
+```
+
+Display selected fields using explicit assignment:
+
+```bash
+pseek --details=size --details=accessed query
+```
+
+The special value `all` can also be used explicitly:
+
+```bash
+pseek query --details=all
+```
+
+**Additional notes:**
+
+- Directories do not display a size because their total contents are not calculated.
+- Modification and access times may be unavailable for some archive entries, depending on the archive format and the metadata stored in it.
+- Access times may be inaccurate or outdated depending on filesystem settings, such as `relatime`, `noatime`, or `nodiratime`.
+- Symbolic link targets do not have a filesystem traversal depth in the same way as their original paths, so their depth may be unavailable.
+- Match counts may be `0` when match positions are not calculated, such as with `--path-only` or fuzzy search.
+- Unavailable or inapplicable values are displayed as `—`.
 
 ## Requirements
 

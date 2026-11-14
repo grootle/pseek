@@ -173,7 +173,7 @@ class SearchConfig:
     threads: int
     sortby: tuple[str, ...]
     sort_rev: bool
-    details: bool
+    details: tuple[str, ...]
     
     def __post_init__(self):
         """Post-initialization processing to normalize and validate inputs"""

@@ -67,6 +67,22 @@ def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str
                     rarfile.SEVENZIP_TOOL = tool
 
 
+def normalize_details(ctx, param, value):
+    if not value:
+        return ()
+
+    if 'all' in value:
+        if len(value) > 1:
+            raise click.BadParameter(
+                "'all' cannot be combined with individual fields."
+            )
+
+        return ('size', 'modified', 'accessed', 'depth', 'matches')
+
+    # Remove duplicate fields while preserving their order.
+    return tuple(dict.fromkeys(value))
+
+
 @click.command()
 @click.argument('query', required=False)
 @click.argument('path', type=click.Path(exists=True, file_okay=False, dir_okay=True),
@@ -185,17 +201,31 @@ def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str
 @click.option('-l', '--paths-only', is_flag=True, help='Only show matching file paths for content search.')
 @click.option('-S', '--stats', is_flag=True,
               help='Show search statistics including result counts and search time.')
-@click.option('--details', is_flag=True,
-              help='Show path metadata—including size, modification date, access date, '
-              'path depth, and matches number—next to the path. '
-              'Values that are unknown are represented by —.')
+@click.option(
+    '--details',
+    type=click.Choice(
+        ('all', 'size', 'modified', 'accessed', 'depth', 'matches'),
+        case_sensitive=False
+    ),
+    callback=normalize_details,
+    multiple=True,
+    is_flag=False,
+    flag_value='all',
+    default=(),
+    metavar='[FIELD]',
+    help='Show metadata next to result paths. '
+         'If used without a value, all metadata fields are displayed. '
+         'Available fields: size, modified, accessed, depth, matches. '
+         'This option can be repeated to select multiple fields.'
+)
 @click.option('--timeout', metavar='FLOAT',
               type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
 @click.option(
     '--sort', 'sortby', metavar='SORTBY',
     type=click.Choice(
-        ['none', 'path', 'size', 'modified', 'depth', 'accessed', 'matches', 'natpath']
+        ('none', 'path', 'size', 'modified', 'depth', 'accessed', 'matches', 'natpath'),
+        case_sensitive=False
     ),
     multiple=True, default=('none',), show_default=True,
     help='This option enables sorting of results in ascending order. '
