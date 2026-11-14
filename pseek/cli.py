@@ -185,11 +185,10 @@ def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str
 @click.option('-l', '--paths-only', is_flag=True, help='Only show matching file paths for content search.')
 @click.option('-S', '--stats', is_flag=True,
               help='Show search statistics including result counts and search time.')
-@click.option('--show-size', is_flag=True,
-              help='Show file sizes next to their paths. '
-              'Since calculating the size of directories is time-consuming, '
-              'their sizes are not displayed. Sizes use binary (IEC) prefixes '
-              '— KiB, MiB, GiB — not decimal (KB, MB, GB).')
+@click.option('--details', is_flag=True,
+              help='Show path metadata—including size, modification date, access date, '
+              'path depth, and matches number—next to the path. '
+              'Values that are unknown are represented by —.')
 @click.option('--timeout', metavar='FLOAT',
               type=click.FloatRange(min=0, min_open=True),
               help='Stop the search after the specified number of seconds.')
@@ -209,7 +208,7 @@ def check_rar_backend(archive_enabled: bool, tool_path: str | None, backend: str
     'please refer to README.'
 )
 @click.option('--sort-rev', is_flag=True,
-              help='Sets the sort order for the --sort option to descending. '
+              help='Set the sort order for the --sort option to descending. '
               'This option is just a flag. You still need to use --sort to specify the sort type.')
 @click.option('--threads', metavar='NUM', type=click.IntRange(min=0), default=0,
               help='This option sets the approximate number of threads to use. '

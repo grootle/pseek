@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import click
 
 from .sorting import sort_results
@@ -68,6 +70,64 @@ def convert_size(size_bytes: int) -> str:
     return f'{size:.2f} {units[i]}'
 
 
+def format_timestamp(timestamp_ns: int | None) -> str:
+    if timestamp_ns is None:
+        return '—'
+
+    try:
+        dt = datetime.fromtimestamp(
+            timestamp_ns / 1_000_000_000
+        )
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+    except (OverflowError, OSError, ValueError):
+        return '—'
+
+
+def create_details(p, need_details: bool, match_count: int | None = None) -> str:
+    if not need_details:
+        return ''
+
+    size = (
+        convert_size(p.size)
+        if p.is_file and p.size is not None
+        else '—'
+    )
+
+    modified = format_timestamp(p.modified)
+    accessed = format_timestamp(p.accessed)
+
+    depth = '—' if p.depth is None else p.depth
+
+    matches = (
+        match_count
+        if match_count is not None
+        else '—'
+    )
+
+    separator = click.style(' | ', fg='bright_black')
+    details = {
+        'Size': size,
+        'Modified': modified,
+        'Accessed': accessed,
+        'Depth': depth,
+        'Matches': matches
+    }
+    output = (
+        '    '
+        + click.style('[', fg='cyan', dim=True)
+        + separator.join(
+            click.style(
+                f'{k}: {v}',
+                fg='cyan',
+                dim=True
+            ) for k, v in details.items()
+        )
+        + click.style(']', fg='cyan', dim=True)
+    )
+
+    return output
+
+
 def echo(results: dict, config):
     """Display results with a specific format and color scheme"""
     for match_type, datas in results.items():
@@ -96,17 +156,28 @@ def echo(results: dict, config):
                                     ),
                                     click.style(data.virtual_path[-1].string, fg="cyan")
                                 ]
-                            ) + ( 
-                                ' - ' + convert_size(data.virtual_path[-1].size)
-                                if config.show_size else ''
-                            )
+                            ) + create_details(
+                                    data.virtual_path[-1],
+                                    config.details,
+                                    sum(
+                                        len(line.matches)
+                                        for group in data.groups
+                                        for line in group.lines
+                                    )
+                                )
                         )
                     else:
                         click.echo(
-                            click.style(data.path.string, fg="cyan") + ( 
-                                ' - ' + convert_size(data.path.size)
-                                if config.show_size else ''
-                            )
+                            click.style(data.path.string, fg="cyan") + \
+                                create_details(
+                                    data.path,
+                                    config.details,
+                                    sum(
+                                        len(line.matches)
+                                        for group in data.groups
+                                        for line in group.lines
+                                    )
+                                )
                         )
 
                     counter = 0
@@ -147,17 +218,12 @@ def echo(results: dict, config):
                         print(
                             separator.join(
                                 [data.path, *data.virtual_path[0:-1], virtual_file_name]
-                            ) + ( 
-                                ' - ' + convert_size(data.virtual_path[-1].size)
-                                if config.show_size and not data.virtual_path[-1].is_dir else ''
-                            )
+                            ) + create_details(data.virtual_path[-1], config.details)
                         )
                     else:
                         print(
-                            build_highlight(data.path.string, matches) + ( 
-                                ' - ' + convert_size(data.path.size)
-                                if config.show_size and not data.path.is_dir else ''
-                            )
+                            build_highlight(data.path.string, matches) + \
+                                create_details(data.path, config.details),
                         )
 
 

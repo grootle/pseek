@@ -63,13 +63,13 @@ Fast and powerful command-line search tool for finding files, directories, and t
     * [Show Full Paths](#show-full-paths)
     * [Paths Only](#paths-only)
     * [Context](#context)
-    * [Show Size](#show-size)
     * [Timeout](#timeout)
     * [Statistics](#statistics)
         * [Result Statistics](#result-statistics)
         * [Search Statistics](#search-statistics)
         * [Search time](#search-time)
     * [Sorting Results](#sorting-results)
+    * [Details](#details)
 * [Requirements](#requirements)
 
 ## Features
@@ -218,9 +218,9 @@ psk --exclude build
 | `--paths-only` | Only show matching file paths for content search |
 | `--stats` | Show search statistics including result counts and search time |
 | `--threads` | This flag sets the approximate number of threads to use. A value of 0 (which is the default) causes pseek to choose the thread count using heuristics |
-| `--show-size` | Show file sizes next to their paths. Since calculating the size of directories is time-consuming, their sizes are not displayed. Sizes use binary (IEC) prefixes — KiB, MiB, GiB — not decimal (KB, MB, GB) |
 | `--sort` | This option enables sorting of results in ascending order. The possible values for this option are: none, path, size, modified, depth, accessed, matches, natpath. Multiple values can be used simultaneously: --sort depth --sort modified. The results are sorted first by depth, and in the event that the depths are identical, then by modified. Use --sort-rev flag for descending order. For more details about this option and how different values function, see [sorting results section](#sorting-results) |
 | `--sort-rev` | Sets the sort order for the `--sort` option to descending. This option is just a flag. You still need to use `--sort` to specify the sort type |
+| `--details` | Show path metadata—including size, modification date, access date, path depth, and matches number—next to the path. Values that are unknown are represented by — |
 
 ## Specifying the Root Directory
 
@@ -927,31 +927,6 @@ Show context lines around each match. The value is specified as `BEFORE:AFTER`:
 
 Nearby matches whose context ranges overlap or directly touch are combined into a single group.
 
-### Show Size
-
-Display file sizes next to their paths.
-
-Directory entries are still displayed, but their sizes are omitted. Calculating the total size of a directory requires scanning its contents, which can be time-consuming.
-
-Sizes use binary (IEC) units rather than decimal units:
-
-- `B` — Bytes
-- `KiB` — Kibibytes (1 KiB = 1,024 bytes)
-- `MiB` — Mebibytes
-- `GiB` — Gibibytes
-- `TiB` — Tebibytes
-
-Values smaller than 1 KiB are displayed as whole bytes. Larger values are displayed with two decimal places.
-
-**Example:**
-
-```text
-512 B
-1.50 KiB
-2.00 MiB
-1.25 GiB
-```
-
 ### Timeout
 
 Stop the search automatically after a specified number of seconds.
@@ -1107,6 +1082,28 @@ pseek --sort natpath --sort modified --sort-rev
 ```
 
 > **Note:** Access times depend on filesystem and operating system behavior. Filesystems may restrict or skip access-time updates through options such as `relatime`, `noatime`, or `nodiratime`. Consequently, access-time sorting may not always reflect the exact time of the most recent access. This behavior is determined by the filesystem, not by `pseek`.
+
+### Details
+
+Display additional metadata next to each result path, including file size, modification time, access time, path depth, and the number of content matches.
+
+**Example:**
+
+```text
+pseek/cli.py    [Size: 12 KiB | Modified: 2026-09-10 20:45:31 | Accessed: 2026-11-15 00:46:05 | Depth: 1 | Matches: 5]
+```
+
+The displayed information follows these rules:
+
+- **Size:** Displayed only for files. Directory sizes are omitted because calculating the total size of a directory requires scanning its contents, which can be time-consuming. Sizes use binary (IEC) units, such as KiB, MiB, and GiB (1 KiB = 1,024 bytes).
+- **Modified:** The last modification time of the file or directory itself, not the modification time of its contents. Timestamps are displayed in the system's local time zone.
+- **Accessed:** The last recorded access time. For directories, this generally refers to the last time their contents were listed or read, not when an individual file inside them was accessed. Access times may be unavailable or inaccurate depending on filesystem settings, such as `relatime`, `noatime`, or `nodiratime`.
+- **Depth:** The path depth within the filesystem, displayed as an integer. For archive entries, depth is represented as a tuple `(archive_depth, entry_depth)`. The first value indicates the depth of the containing archive in the filesystem, while the second represents the entry's depth within the archive hierarchy, including nested archives.
+- **Matches:** Displays the number of recorded content matches for content search results only. It is not applicable to file and directory name searches. A value of `0` indicate that match positions were not calculated, such as when using `--path-only` or fuzzy search.
+
+Values that are unavailable or not applicable are displayed as `—`.
+
+For archive entries, metadata availability depends on the archive format and the information stored when the archive was created. Consequently, some timestamp values may be unavailable.
 
 ## Requirements
 

@@ -110,7 +110,7 @@ def search_file_and_dir(config, matches: dict, pattern, p,
 
     # Search for files and directories name inside archive files if archive is active
     if config.archive and p.suffix in ARCHIVE_EXTS[:-3]:
-        if 'accessed' in config.sortby:
+        if 'accessed' in config.sortby or config.details:
             try:
                 # Just to save accessed time before reading file.
                 # Depending on file system settings,

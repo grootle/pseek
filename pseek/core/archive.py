@@ -28,8 +28,8 @@ def get_archive_path_size(info, file_type: str) -> int:
 
 
 def get_mod_or_acc_time(info, file_type: str, sort_type: tuple,
-                        requested_type: str = 'modified') -> int | None:
-    if requested_type not in sort_type:
+                        details: bool, requested_type: str = 'modified') -> int | None:
+    if requested_type not in sort_type and not details:
         return None
 
     if file_type == 'zip':
@@ -122,11 +122,17 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=not is_dir,
                         is_dir=is_dir,
                         psize=get_archive_path_size(info, file_path.suffix),
-                        mtime_ns=get_mod_or_acc_time(info, file_path.suffix, config.sortby),
+                        mtime_ns=get_mod_or_acc_time(
+                            info,
+                            file_path.suffix,
+                            config.sortby,
+                            config.details
+                        ),
                         atime_ns=get_mod_or_acc_time(
                             info,
                             file_path.suffix,
                             config.sortby,
+                            config.details,
                             'accessed'
                         ),
                         depth=(
@@ -159,11 +165,17 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=not is_dir,
                         is_dir=is_dir,
                         psize=get_archive_path_size(info, '7z'),
-                        mtime_ns=get_mod_or_acc_time(info, '7z', config.sortby),
+                        mtime_ns=get_mod_or_acc_time(
+                            info,
+                            '7z',
+                            config.sortby,
+                            config.details
+                        ),
                         atime_ns=get_mod_or_acc_time(
                             info,
                             '7z',
                             config.sortby,
+                            config.details,
                             'accessed'
                         ),
                         depth=(
@@ -209,11 +221,17 @@ def extract_names_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=not is_dir,
                         is_dir=is_dir,
                         psize=get_archive_path_size(member, file_path.suffix),
-                        mtime_ns=get_mod_or_acc_time(member, file_path.suffix, config.sortby),
+                        mtime_ns=get_mod_or_acc_time(
+                            member,
+                            file_path.suffix,
+                            config.sortby,
+                            config.details
+                        ),
                         atime_ns=get_mod_or_acc_time(
                             member,
                             file_path.suffix,
                             config.sortby,
+                            config.details,
                             'accessed'
                         ),
                         depth=(
@@ -279,11 +297,17 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=True,
                         is_dir=False,
                         psize=get_archive_path_size(info, file_path.suffix),
-                        mtime_ns=get_mod_or_acc_time(info, file_path.suffix, config.sortby),
+                        mtime_ns=get_mod_or_acc_time(
+                            info,
+                            file_path.suffix,
+                            config.sortby,
+                            config.details
+                        ),
                         atime_ns=get_mod_or_acc_time(
                             info,
                             file_path.suffix,
                             config.sortby,
+                            config.details,
                             'accessed'
                         ),
                         depth=(
@@ -323,11 +347,17 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=True,
                         is_dir=False,
                         psize=get_archive_path_size(info, '7z'),
-                        mtime_ns=get_mod_or_acc_time(info, '7z', config.sortby),
+                        mtime_ns=get_mod_or_acc_time(
+                            info,
+                            '7z',
+                            config.sortby,
+                            config.details
+                        ),
                         atime_ns=get_mod_or_acc_time(
                             info,
                             '7z',
                             config.sortby,
+                            config.details,
                             'accessed'
                         ),
                         depth=(
@@ -377,11 +407,17 @@ def extract_text_from_archive(file_path: SysPath, config, depth: int = -1,
                         is_file=True,
                         is_dir=False,
                         psize=get_archive_path_size(member, file_path.suffix),
-                        mtime_ns=get_mod_or_acc_time(member, file_path.suffix, config.sortby),
+                        mtime_ns=get_mod_or_acc_time(
+                            member,
+                            file_path.suffix,
+                            config.sortby,
+                            config.details
+                        ),
                         atime_ns=get_mod_or_acc_time(
                             member,
                             file_path.suffix,
                             config.sortby,
+                            config.details,
                             'accessed'
                         ),
                         depth=(
